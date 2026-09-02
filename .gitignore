@@ -1,0 +1,36 @@
+# Personal learning artefacts — candid self-assessment, not for publication
+docs/reading/
+docs/private/
+
+# Disposable working docs — transient task lists and scratch, safe to delete
+disposable/
+
+# Raw firehose archive and replay corpus — large, and regenerable
+data/
+*.zst
+*.jsonl
+
+# Rust
+target/
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Local infrastructure state
+.volumes/
+prometheus-data/
+grafana-data/
+clickhouse-data/
+kafka-data/
+postgres-data/
