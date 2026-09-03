@@ -51,6 +51,27 @@ answer, then push back.
 
 The danger is not the volume of help. It is which category gets outsourced.
 
+### State the problem before the task
+
+Before I build anything non-trivial, state **what problem it solves** — not the
+steps. Concretely:
+
+1. **What exists now**, quoted from the actual code, with the limitation visible.
+2. **What that prevents**, as specific scenarios that fail or cannot be done.
+3. **Why now** — what upcoming work depends on it.
+4. **Done when** — an observable check I can run, ideally a command and its
+   expected effect.
+
+A checklist item like "config via `envconfig`" is a *solution* with its problem
+left implicit. Transcribing a solution I do not understand the purpose of is
+tutorial-following with extra steps: I get working code and no model of why it
+is shaped that way, which is the exact failure mode this document exists to
+prevent. Understanding the problem is also what makes the design decision mine
+to make — I cannot choose between approaches without knowing what they are for.
+
+State the problem, then let me choose the shape. This is not the same as
+proposing a design: the problem is context, the solution is mine.
+
 ### Levels of help — I name the level
 
 When I ask for help, I state a tier. Default to the lowest tier that could

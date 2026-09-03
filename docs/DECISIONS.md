@@ -141,3 +141,35 @@ Matching the reference implementation makes their code a usable guide.
 
 **Rejected: config files.** Simpler to inspect locally, but needs a separate
 mechanism for secrets and per-environment overrides in Docker and Kubernetes.
+
+---
+
+## 2026-09-02 — Shared `common` crate built now, before its second consumer
+
+**Context.** `murmur-common` is a library for shared config and telemetry, but
+only one binary exists (`ingest`). `capture` is not built yet, so "shared" code
+currently has exactly one consumer.
+
+**Decision.** Put config and telemetry in `murmur-common` now, as `WEEK-1.md`
+prescribes, rather than keeping them local to `ingest` and extracting later.
+
+**Why.** Shared concerns get a home before there is any pressure to copy-paste
+into a second binary. Explicitly also a learning decision: building the
+abstraction early and then watching whether it was the right shape is more
+instructive than avoiding the question, and it stands as a reminder to keep
+checking whether `common` has earned its contents.
+
+**Rejected: extract on second use.** The standard discipline — duplicate first,
+centralise when the same concern actually appears twice — is the safer default,
+because duplication is cheaper to fix than a wrong abstraction. Rejected
+deliberately, with the risk accepted rather than overlooked.
+
+**The risk being accepted, stated plainly.** With one consumer, what belongs in
+`common` is a prediction, and Rust gives no feedback if the prediction is wrong:
+`pub` items in a library crate are never flagged as dead code, so anything
+misplaced here stays silently unused. No tool detects this; it is a manual
+review.
+
+**Review trigger.** When `capture` is built, check every item in
+`murmur-common`: if `capture` does not use it, it was `ingest`-specific and
+should move back.
