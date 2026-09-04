@@ -1,9 +1,15 @@
+use std::time::Duration;
+
+use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+use tokio::net::TcpStream;
+use tokio_tungstenite::tungstenite::Error;
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+
 // use rustls::
 // CryptoProvider;
 use futures_util::StreamExt;
-use tokio_tungstenite::connect_async;
-// use tokio_tungstenite::tungstenite::http::{Method, Request};
 use serde::Deserialize;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -16,47 +22,108 @@ async fn main() {
     let zone = std::env::var("ZONE").unwrap();
 
     // let mut request = "wss://jetstream2.us-east.bsky.network/subscribe".into_client_request().unwrap();
-    let mut request = format!("wss://jetstream.{zone}.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents?kinds=commit&collections={js_collection}")
-        .into_client_request()
-        .unwrap();
-    request
-        .headers_mut()
-        .insert("Sec-WebSocket-Protocol", "xrpc.v1.json".parse().unwrap());
+    // let mut request = format!("wss://jetstream.{zone}.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents?kinds=commit&collections={js_collection}")
+    //     .into_client_request()
+    //     .unwrap();
+    // request
+    //     .headers_mut()
+    //     .insert("Sec-WebSocket-Protocol", "xrpc.v1.json".parse().unwrap());
 
-    let (mut stream, _response) = connect_async(request).await.unwrap();
+    // let (mut stream, _response) = connect_async(request).await.unwrap();
 
-    while let Some(msg) = stream.next().await {
-        let msg = msg.expect("We got an error here");
-        println!("--New message");
+    // while let Some(msg) = stream.next().await {
+    //     let msg = msg.expect("We got an error here");
+    //     println!("--New message");
 
-        // call a function here instead
-        match msg {
-            Message::Text(text) => {
-                // println!("{text}");
-                // let parsed: JetstreamMessage = serde_json::from_str(&text).expect(JetstreamMessage);
-                let parsed: JetstreamMessage = serde_json::from_str(&text).unwrap();
-                println!("\tseq={}", parsed.payload.seq);
-                // let text = parsed.payload.record.text;
-                // println!("\ttext={}", parsed.payload.record.text);
+    //     // call a function here instead
+    //     match msg {
+    //         Message::Text(text) => {
+    //             // println!("{text}");
+    //             // let parsed: JetstreamMessage = serde_json::from_str(&text).expect(JetstreamMessage);
+    //             let parsed: JetstreamMessage = serde_json::from_str(&text).unwrap();
+    //             println!("\tseq={}", parsed.payload.seq);
+    //             // let text = parsed.payload.record.text;
+    //             // println!("\ttext={}", parsed.payload.record.text);
 
-                if let Some(record) = &parsed.payload.record {
-                    if let Some(text) = &record.text {
-                        println!("\ttext={text}");
+    //             if let Some(record) = &parsed.payload.record {
+    //                 if let Some(text) = &record.text {
+    //                     println!("\ttext={text}");
+    //                 }
+    //             }
+    //         }
+
+    //         Message::Ping(_payload) => {}
+    //         Message::Pong(_payload) => {}
+    //         Message::Close(_frame) => {
+    //             // frame is Option<CloseFrame>
+    //         }
+    //         Message::Frame(_) => {}
+    //         Message::Binary(_) => {}
+    //     }
+    // }
+
+    let url = format!("wss://jetstream.{zone}.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents?kinds=commit&collections={js_collection}");
+    loop {
+        let connection_result = connect(&url).await;
+
+        let mut stream = match connection_result {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("connect failed: {e}");
+                sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        while let Some(msg) = stream.next().await {
+            let msg = match msg {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("connection is good, but message has an error: {e}");
+                    break;  
+                }
+            };
+            println!("--New message");
+            
+            match msg {
+                Message::Text(text) => {
+                    println!("{text}");
+                    // let parsed: JetstreamMessage = serde_json::from_str(&text).expect(JetstreamMessage);
+                    let parsed: JetstreamMessage = serde_json::from_str(&text).unwrap();
+                    println!("\tseq={}", parsed.payload.seq);
+                    // let text = parsed.payload.record.text;
+                    // println!("\ttext={}", parsed.payload.record.text);
+                    
+                    if let Some(record) = &parsed.payload.record {
+                        if let Some(text) = &record.text {
+                            println!("\ttext={text}");
+                        }
                     }
                 }
+                Message::Ping(_payload) => {}
+                Message::Pong(_payload) => {}
+                Message::Close(_frame) => {
+                    break;
+                }
+                Message::Frame(_) => {}
+                Message::Binary(_) => {}
             }
-
-            Message::Ping(_payload) => {}
-            Message::Pong(_payload) => {}
-            Message::Close(_frame) => {
-                // frame is Option<CloseFrame>
-            }
-            Message::Frame(_) => {}
-            Message::Binary(_) => {}
         }
+        
+        // TODO(backoff): grow the delay across consecutive failures, reset on success, cap it. Pretty sure there are libs for this, but i can try implementing my own for funsies
+        sleep(Duration::from_secs(5)).await;
+        
     }
 }
 
+async fn connect(url: &str) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, Error> {
+    let mut request = url.into_client_request()?;
+    request
+        .headers_mut()
+        .insert("Sec-WebSocket-Protocol", "xrpc.v1.json".parse().unwrap());
+    let (stream, _response) = connect_async(request).await?;
+
+    Ok(stream)
+}
 #[derive(Deserialize)]
 struct JetstreamMessage {
     payload: Commit,
