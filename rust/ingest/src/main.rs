@@ -21,6 +21,10 @@ async fn main() {
     let js_collection = std::env::var("JETSTREAM_COLLECTIONS").unwrap();
     let zone = std::env::var("ZONE").unwrap();
 
+    let max_delay_time:u64 = std::env::var("MAX_DELAY_TIME").unwrap().parse().unwrap();
+    let mut reconnection_delay:u64 = std::env::var("RECONNECTION_DELAY").unwrap().parse().unwrap();
+    let mut consecutive_failures: u32 = 0; 
+    
     let url = format!("wss://jetstream.{zone}.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents?kinds=commit&collections={js_collection}");
     loop {
         let connection_result = connect(&url).await;
@@ -28,6 +32,7 @@ async fn main() {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("connect failed: {e}");
+                // TODO(backoff): grow the delay across consecutive failures, reset on success, cap it
                 sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -41,6 +46,7 @@ async fn main() {
                 }
                 Some(Ok(msg)) => handle_message(msg),
                 Some(Err(e)) => {
+                    // TODO(backoff): no need to call it, cause its caught outside the loop
                     eprintln!("stream error: {e}");
                     break;
                 }
@@ -51,7 +57,7 @@ async fn main() {
             }
         }
         // TODO(backoff): grow the delay across consecutive failures, reset on success, cap it
-        sleep(Duration::from_secs(5)).await;
+        reconnection_delay =  backoff_delay(reconnection_delay, max_delay_time).await;
     }
 }
 
@@ -64,6 +70,18 @@ async fn connect(url: &str) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>
 
     Ok(stream)
 }
+
+async fn backoff_delay(delay: u64, max_delay: u64, /* mut consecutive_failures: u64 */  ) -> u64 {
+    let mut timer:u64 = delay * delay; // WARN: this can probably overflow u64
+    if timer >= max_delay {
+        timer = max_delay;
+    }
+/*     consecutive_failures += 1; */
+    // return timer
+    sleep(Duration::from_secs(timer)).await;
+    return timer;
+}
+
 fn handle_message(msg: Message) -> () {
     match msg {
         Message::Text(text) => {
@@ -97,10 +115,10 @@ struct JetstreamMessage {
 #[derive(Deserialize)]
 struct Commit {
     record: Option<Record>,
-    cid: Option<String>,
-    did: String,
+    _cid: Option<String>,
+    _did: String,
     seq: u64,
-    operation: Operation,
+    _operation: Operation,
 }
 #[derive(Deserialize)]
 struct Record {
