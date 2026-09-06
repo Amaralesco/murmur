@@ -21,19 +21,31 @@ async fn main() {
     let js_collection = std::env::var("JETSTREAM_COLLECTIONS").unwrap();
     let zone = std::env::var("ZONE").unwrap();
 
-    let max_delay_time:u64 = std::env::var("MAX_DELAY_TIME").unwrap().parse().unwrap();
-    let mut reconnection_delay:u64 = std::env::var("RECONNECTION_DELAY").unwrap().parse().unwrap();
-    let mut consecutive_failures: u32 = 0; 
-    
+    let mut config = BackoffConfig {
+        base_delay_secs: std::env::var("BASE_DELAY_SECS").unwrap().parse().unwrap(),
+        max_delay_secs: std::env::var("MAX_DELAY_TIME").unwrap().parse().unwrap(),
+        multiplier: std::env::var("BACKOFF_MULTIPLIER")
+            .unwrap()
+            .parse()
+            .unwrap(),
+    };
+    let mut consecutive_failures: u32 = 0;
+
     let url = format!("wss://jetstream.{zone}.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents?kinds=commit&collections={js_collection}");
     loop {
+        if consecutive_failures > 0 {
+            sleep(backoff_delay(&config, consecutive_failures)).await
+        }
+
         let connection_result = connect(&url).await;
         let mut stream = match connection_result {
-            Ok(s) => s,
+            Ok(s) => {
+                consecutive_failures = 0;
+                s
+            }
             Err(e) => {
                 eprintln!("connect failed: {e}");
-                // TODO(backoff): grow the delay across consecutive failures, reset on success, cap it
-                sleep(Duration::from_secs(5)).await;
+                consecutive_failures += 1;
                 continue;
             }
         };
@@ -56,8 +68,11 @@ async fn main() {
                 }
             }
         }
-        // TODO(backoff): grow the delay across consecutive failures, reset on success, cap it
-        reconnection_delay =  backoff_delay(reconnection_delay, max_delay_time).await;
+        // Falling out of the inner loop always means the connection ended.
+        // We never give up: with no supervisor to restart us and no alerting,
+        // stopping would just leave the process silently dead. Capped delay,
+        // uncapped attempts.
+        consecutive_failures += 1 // ← this line
     }
 }
 
@@ -71,15 +86,14 @@ async fn connect(url: &str) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>
     Ok(stream)
 }
 
-async fn backoff_delay(delay: u64, max_delay: u64, /* mut consecutive_failures: u64 */  ) -> u64 {
-    let mut timer:u64 = delay * delay; // WARN: this can probably overflow u64
-    if timer >= max_delay {
-        timer = max_delay;
-    }
-/*     consecutive_failures += 1; */
-    // return timer
-    sleep(Duration::from_secs(timer)).await;
-    return timer;
+fn backoff_delay(config: &BackoffConfig, attempts: u32) -> Duration {
+    let growth = config.multiplier.saturating_pow(attempts);
+    let computed = config.base_delay_secs.saturating_mul(growth);
+    let delay = computed.min(config.max_delay_secs);
+
+    // TODO(jitter): randomize within the delay so independent clients
+    // don't all retry in lockstep against a shared public service.
+    return Duration::from_secs(delay);
 }
 
 fn handle_message(msg: Message) -> () {
@@ -109,16 +123,15 @@ fn handle_message(msg: Message) -> () {
 struct JetstreamMessage {
     payload: Commit,
     //   phones: Vec<String>,
-    //   time: String;//help me //Can i name it timestamp instead?
     //   opreation: Enum <create,post,commit>
 }
 #[derive(Deserialize)]
 struct Commit {
     record: Option<Record>,
-    _cid: Option<String>,
-    _did: String,
+    cid: Option<String>,
+    did: String,
     seq: u64,
-    _operation: Operation,
+    operation: Operation,
 }
 #[derive(Deserialize)]
 struct Record {
@@ -131,4 +144,10 @@ enum Operation {
     Create,
     Update,
     Delete,
+}
+
+struct BackoffConfig {
+    base_delay_secs: u64,
+    max_delay_secs: u64,
+    multiplier: u64,
 }
