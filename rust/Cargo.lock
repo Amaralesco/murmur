@@ -311,6 +311,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dotenvy",
+ "envconfig",
  "futures-util",
  "murmur-common",
  "rustls",

@@ -1,3 +1,5 @@
+mod config;
+
 use std::time::Duration;
 
 use tokio::time::sleep;
@@ -9,6 +11,8 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
 // use rustls::
 // CryptoProvider;
+use crate::config::Config;
+use envconfig::Envconfig;
 use futures_util::StreamExt;
 use serde::Deserialize;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -17,24 +21,19 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 async fn main() {
     dotenvy::dotenv().ok();
 
-    let _log_level = std::env::var("LOG_LEVEL");
-    let js_collection = std::env::var("JETSTREAM_COLLECTIONS").unwrap();
-    let zone = std::env::var("ZONE").unwrap();
+    let config = Config::init_from_env().expect("invalid configuration");
 
-    let mut config = BackoffConfig {
-        base_delay_secs: std::env::var("BASE_DELAY_SECS").unwrap().parse().unwrap(),
-        max_delay_secs: std::env::var("MAX_DELAY_TIME").unwrap().parse().unwrap(),
-        multiplier: std::env::var("BACKOFF_MULTIPLIER")
-            .unwrap()
-            .parse()
-            .unwrap(),
+    let backoff = BackoffConfig {
+        base_delay_secs: config.base_delay_secs,
+        max_delay_secs: config.max_delay_secs,
+        multiplier: config.backoff_multiplier.get(),
     };
     let mut consecutive_failures: u32 = 0;
 
-    let url = format!("wss://jetstream.{zone}.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents?kinds=commit&collections={js_collection}");
+    let url = config.jetstream_url();
     loop {
         if consecutive_failures > 0 {
-            sleep(backoff_delay(&config, consecutive_failures)).await
+            sleep(backoff_delay(&backoff, consecutive_failures)).await
         }
 
         let connection_result = connect(&url).await;
