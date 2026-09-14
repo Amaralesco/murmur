@@ -17,6 +17,10 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
+// File Writing
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Write};
+
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
@@ -31,6 +35,18 @@ async fn main() {
     let mut consecutive_failures: u32 = 0;
 
     let url = config.jetstream_url();
+
+    // ########## File section ##########
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("archive.jsonl")
+        .expect("could not open archive file");
+
+    let mut archive = Archive {
+        writer: BufWriter::new(file),
+    };
+
     loop {
         if consecutive_failures > 0 {
             sleep(backoff_delay(&backoff, consecutive_failures)).await
@@ -55,7 +71,7 @@ async fn main() {
                     eprintln!("server closed the connection");
                     break;
                 }
-                Some(Ok(msg)) => handle_message(msg),
+                Some(Ok(msg)) => handle_message(msg, &mut archive),
                 Some(Err(e)) => {
                     // TODO(backoff): no need to call it, cause its caught outside the loop
                     eprintln!("stream error: {e}");
@@ -95,7 +111,7 @@ fn backoff_delay(config: &BackoffConfig, attempts: u32) -> Duration {
     return Duration::from_secs(delay);
 }
 
-fn handle_message(msg: Message) -> () {
+fn handle_message(msg: Message, archive: &mut Archive) -> () {
     match msg {
         Message::Text(text) => {
             println!("{text}");
@@ -106,6 +122,13 @@ fn handle_message(msg: Message) -> () {
                 if let Some(text) = &record.text {
                     println!("\ttext={text}");
                 }
+            }
+
+            if let Err(e) = archive.writer.write_all(text.as_bytes()) {
+                eprintln!("Could not write to disk: {e}");
+            }
+            if let Err(e) = archive.writer.write_all(b"\n") {
+                eprintln!("Could not write to disk: {e}");
             }
         }
         Message::Ping(_payload) => {}
@@ -149,4 +172,8 @@ struct BackoffConfig {
     base_delay_secs: u64,
     max_delay_secs: u64,
     multiplier: u64,
+}
+
+struct Archive {
+    writer: BufWriter<File>,
 }
