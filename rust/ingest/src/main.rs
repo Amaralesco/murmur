@@ -1,7 +1,7 @@
 mod config;
 
 use rustls::server::Accepted;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use tokio::net::TcpStream;
@@ -78,20 +78,31 @@ async fn main() -> anyhow::Result<()> {
                 }
 
             }
-            match stream.next().await {
-                Some(Ok(Message::Close(_))) => {
-                    eprintln!("server closed the connection");
-                    break;
+            match timeout(Duration::from_secs(config.missed_pings_tolerance.get() * 30), stream.next()).await{
+                Ok(next_message) =>{
+                    match next_message {
+                        Some(Ok(Message::Close(_))) => {
+                            eprintln!("server closed the connection");
+                            break;
+                        }
+                        Some(Ok(msg)) => {
+                            handle_message(msg, &mut archive);
+                        }
+                        Some(Err(e)) => {
+                            eprintln!("stream error: {e}");
+                            break;
+                        }
+                        None => {
+                            eprintln!("stream ended");
+                            break;
+                        }
+                    }
+
+
                 }
-                Some(Ok(msg)) => {
-                    handle_message(msg, &mut archive);
-                }
-                Some(Err(e)) => {
-                    eprintln!("stream error: {e}");
-                    break;
-                }
-                None => {
-                    eprintln!("stream ended");
+                Err(timed_out_error)=>{
+                    println!("WARN: Connection pinged missed {} times", config.missed_pings_tolerance);
+                    println!("WARN: Disconnecting, error {}", timed_out_error );
                     break;
                 }
             }
@@ -163,7 +174,10 @@ fn handle_message(msg: Message, archive: &mut Archive) -> () {
                 eprintln!("Could not write to disk: {e}");
             }
         }
-        Message::Ping(_payload) => {}
+        Message::Ping(_payload) => {
+
+            println!("{}", format!("🔵PING PING PING🔵 at {}", Utc::now().format("%Y-%m-%dT%H%M")))
+        }
         Message::Pong(_payload) => {}
         Message::Close(_frame) => {
             // frame is Option<CloseFrame>

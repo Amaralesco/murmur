@@ -19,6 +19,11 @@ pub struct Config {
 
     #[envconfig(default = "2")]
     pub backoff_multiplier: NonZeroU64,
+
+    #[envconfig(default = "5")]
+    pub missed_pings_tolerance: NonZeroU64, 
+    // Todo: Make sure number of missed_pings_tolerance is at least 2
+
 }
 
 impl Config {
