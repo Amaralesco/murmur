@@ -88,6 +88,11 @@ language choice is reopened — with evidence, not with friction. Go has now com
 up twice, both times immediately after a hard stretch. The tripwire exists to
 distinguish a bad decision from a hard afternoon.
 
+**Superseded in part by 2026-09-09.** The "non-completion is the real risk"
+framing above no longer holds; learning is the validator. The Rust decision and
+the tripwire itself both stand — only what the tripwire *means* when it fires
+has changed.
+
 ---
 
 ## 2026-09-01 — Backpressure by blocking, not buffering
@@ -173,3 +178,103 @@ review.
 **Review trigger.** When `capture` is built, check every item in
 `murmur-common`: if `capture` does not use it, it was `ingest`-specific and
 should move back.
+
+---
+
+## 2026-09-09 — Learning is the validator, not completion
+
+**Context.** Two framings have been running side by side without being
+reconciled. The 2026-09-01 entry above states it plainly: *"The real risk is not
+difficulty, it is non-completion. A working Go pipeline would beat a
+half-finished Rust one."* `ROADMAP.md` backs it with a tripwire, and
+`project-context.md` defines a phase as done when there is a working end-to-end
+path. Meanwhile `learning-protocol.md` insists the point is capability, forbids
+AI codegen on the designated component, and requires that I be able to explain
+every line before it ships. The first framing rewards getting there; the second
+rewards how I got there.
+
+Under schedule pressure those give opposite instructions, and it is exactly
+under schedule pressure that the instruction matters.
+
+**Decision.** **Learning is the validator.**  Falling behind `WEEK-1.md` or `ROADMAP.md` is not
+failure — they pace the work, they do not oblige it. Scope may be cut freely;
+*how* something got built may not be shortcut. Benchmarks, postmortems and the
+dashboard are evidence that learning happened, not the object of the exercise.
+
+**The one thing completion still protects.** Something has to actually run, and
+keep running, because a system that never runs teaches nothing about operating
+one — and operational pain is a stated non-negotiable. That is the entire
+remaining case for finishing anything. It is a real case, and it is narrower
+than "ship the roadmap".
+
+**Rejected: completion as the validator**, i.e. leaving the 2026-09-01 framing
+in force. The argument for it is not weak. A project that never runs produces no
+benchmarks, no postmortems, and no defensible numbers, and "I learned a lot"
+with nothing running is the classic self-deceiving outcome. Rejected anyway,
+because the failure mode it guards against is not the one actually in play: the
+observed risk here has been the opposite — reaching for a higher tier of help to
+stay on schedule, which yields code on time that I cannot defend. That is the
+signature failure `learning-protocol.md` exists to prevent, and a
+completion-first framing licenses it.
+
+**Rejected: deleting the Week 1 tripwire.** It survives, with its meaning
+changed. It no longer reads "Rust failed, switch to Go." It reads: *stop and
+review, with evidence.* Its original justification stands untouched — Go has
+come up twice, both times immediately after a hard stretch, and the tripwire
+exists to distinguish a bad decision from a hard afternoon. Demoting completion
+does not make that guard less necessary; if anything it makes it more so, since
+"learning is the validator" is an easy thing to hide behind.
+
+**Consequence to watch.** The honest risk being accepted is that this entry can
+be used to excuse drift. The countermeasure is that the tripwire still fires and
+still demands evidence, and that the Friday architecture defence is unchanged —
+it is graded on whether I can defend the design, which is not something a
+slipped schedule can fake.
+
+---
+
+## 2026-09-14 — Archive files are bounded by arrival time, not event time
+
+**Context.** `ingest` starts a new archive file on a wall-clock boundary. The
+check compares `Utc::now()` — when *this process* notices — against the boundary
+stored on the open file. The events themselves carry `payload.time`, which is
+set at Bluesky when the event happened.
+
+Those are two different clocks on two different machines, with network latency
+and server-side queueing between them. An event stamped `11:58:00.010` can
+arrive while the local clock still reads `11:57:59.98`, and lands in the file
+named for the earlier minute.
+
+**Measured.** First real rotation run, 2026-09-14, four files at one-minute
+granularity: two files were clean, one carried 2 stray events out of 825
+(0.24%), one carried 1 out of 2392 (0.04%).
+
+**Decision.** Accept the drift. **A filename records when the file was opened,
+not what is inside it.**
+
+**Why this is not merely an off-by-one.** The rotation check currently runs
+before `stream.next().await`, which adds one message of lag — but moving it
+after the read would not close the gap. The gap is the distance between two
+clocks, and no placement of a local check removes it.
+
+**Rejected: bucket on the event's own timestamp.** This would make filenames
+exactly describe contents, which is the property a partitioned query wants. It
+requires a closed file to be reopened when a late event arrives, or a watermark
+scheme that holds a window open for some grace period and accepts data loss past
+it. That is the same problem every streaming system has, and it is a much larger
+design than the archive needs. Revisit only if something downstream genuinely
+requires "every event in window N is in file N".
+
+**What this is fine for, and what it is not.** Fine for the replay corpus, whose
+requirement is "roughly N minutes of traffic per file, in order, with no holes".
+Not fine for anything that partitions by file and assumes the boundary is exact.
+
+**Note on the current interval.** Rotation is presently at minute granularity
+(`%Y-%m-%dT%H%M`) so the behaviour can be observed in a short run. That is a
+debug setting, not the intended interval, and the drift percentages above will
+fall proportionally once the window is an hour.
+
+**Still owed.** The choice of batch compression over streaming — made
+deliberately, with measured numbers — currently lives only in
+`disposable/archive-compression.md`, which is gitignored and disposable. It
+needs its own entry here when compression actually ships.
