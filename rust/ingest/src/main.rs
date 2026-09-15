@@ -20,6 +20,7 @@ use core::arch;
 use chrono::{DateTime, Utc};
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 #[tokio::main]
@@ -38,8 +39,9 @@ async fn main() -> anyhow::Result<()> {
     let url = config.jetstream_url();
 
     // ########## File section ##########
+    std::fs::create_dir_all(&config.readings_dir)?;
     let debug_format = "%Y-%m-%dT%H%M";
-    let mut archive = create_file().expect("could not create archive file");
+    let mut archive = create_file(&config.readings_dir).expect("could not create archive file");
 
     // ########## Connection Loop ##########
     loop {
@@ -65,44 +67,66 @@ async fn main() -> anyhow::Result<()> {
             // Is this a big toll on a process that is meant to be as quick as possible
             if archive.latest_file_time != Utc::now().format(debug_format).to_string() {
                 println!("🚨\n🚨\n🚨\n🚨NEW FILE🚨\n🚨\n🚨\n🚨\n");
+                // archive
+                //     .writer
+                //     .flush()
+                //     .expect("Couldn't finish writing to file");
 
                 // new file
-                match create_file(){
-                    Ok(a) => {archive = a}
+                match create_file(&config.readings_dir) {
+                    Ok(next_archive) => {
+                        let finished = std::mem::replace(&mut archive, next_archive);
+                        match finished.writer.into_inner() {
+                            Ok(file) => {
+                                drop(file);
+                                //TODO(compress): hand finished.archive_name to the
+                                //background compression task.
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "could not flush finished archive {}: {}",
+                                    finished.archive_name,
+                                    e.error()
+                                );
+                            }
+                        }
+                    }
                     Err(e) => {
-                        // println!(format!("Critical error while trying to create file: {}", e.to_string()));
                         println!("error:{}", e);
                         // keep printing into the old file instead
                         archive.latest_file_time = Utc::now().format(debug_format).to_string();
                     }
                 }
-
             }
-            match timeout(Duration::from_secs(config.missed_pings_tolerance.get() * 30), stream.next()).await{
-                Ok(next_message) =>{
-                    match next_message {
-                        Some(Ok(Message::Close(_))) => {
-                            eprintln!("server closed the connection");
-                            break;
-                        }
-                        Some(Ok(msg)) => {
-                            handle_message(msg, &mut archive);
-                        }
-                        Some(Err(e)) => {
-                            eprintln!("stream error: {e}");
-                            break;
-                        }
-                        None => {
-                            eprintln!("stream ended");
-                            break;
-                        }
+            match timeout(
+                Duration::from_secs(config.missed_pings_tolerance.get() * 30),
+                stream.next(),
+            )
+            .await
+            {
+                Ok(next_message) => match next_message {
+                    Some(Ok(Message::Close(_))) => {
+                        eprintln!("server closed the connection");
+                        break;
                     }
-
-
-                }
-                Err(timed_out_error)=>{
-                    println!("WARN: Connection pinged missed {} times", config.missed_pings_tolerance);
-                    println!("WARN: Disconnecting, error {}", timed_out_error );
+                    Some(Ok(msg)) => {
+                        handle_message(msg, &mut archive);
+                    }
+                    Some(Err(e)) => {
+                        eprintln!("stream error: {e}");
+                        break;
+                    }
+                    None => {
+                        eprintln!("stream ended");
+                        break;
+                    }
+                },
+                Err(timed_out_error) => {
+                    println!(
+                        "WARN: Connection pinged missed {} times",
+                        config.missed_pings_tolerance
+                    );
+                    println!("WARN: Disconnecting, error {}", timed_out_error);
                     break;
                 }
             }
@@ -125,16 +149,15 @@ async fn connect(url: &str) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>
     Ok(stream)
 }
 
-fn create_file() -> Result<Archive, std::io::Error> {
+fn create_file(dir: &Path) -> Result<Archive, std::io::Error> {
     let debug_format = "%Y-%m-%dT%H%M";
-    
-    
-    let mut latest_file_time = Utc::now().format(debug_format).to_string();
+
+    let latest_file_time = Utc::now().format(debug_format).to_string();
     let archive_name = format!("logs_{}.jsonl", latest_file_time); // 2026-09-09T16.jsonl
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&archive_name)?;
+
+    let path = dir.join(&archive_name);
+
+    let file = OpenOptions::new().create(true).append(true).open(&path)?;
 
     let archive = Archive {
         writer: BufWriter::new(file),
@@ -175,8 +198,13 @@ fn handle_message(msg: Message, archive: &mut Archive) -> () {
             }
         }
         Message::Ping(_payload) => {
-
-            println!("{}", format!("🔵PING PING PING🔵 at {}", Utc::now().format("%Y-%m-%dT%H%M")))
+            println!(
+                "{}",
+                format!(
+                    "🔵PING PING PING🔵 at {}",
+                    Utc::now().format("%Y-%m-%dT%H%M")
+                )
+            )
         }
         Message::Pong(_payload) => {}
         Message::Close(_frame) => {
