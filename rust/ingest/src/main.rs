@@ -19,12 +19,18 @@ use core::arch;
 // File Writing
 use chrono::{DateTime, Utc};
 use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
+use zstd::Encoder;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // TEMPORARY slice-2 test. Delete once compression runs from rotation.
+    // Note the argument is the SOURCE .jsonl; the .tmp name is derived inside.
+    compress_archive(Path::new("data/tmp/logs_2026-09-14T1155.jsonl"))?;
+    return Ok(());
+
     // ########## Connection section ##########
     dotenvy::dotenv().ok();
 
@@ -67,10 +73,6 @@ async fn main() -> anyhow::Result<()> {
             // Is this a big toll on a process that is meant to be as quick as possible
             if archive.latest_file_time != Utc::now().format(debug_format).to_string() {
                 println!("🚨\n🚨\n🚨\n🚨NEW FILE🚨\n🚨\n🚨\n🚨\n");
-                // archive
-                //     .writer
-                //     .flush()
-                //     .expect("Couldn't finish writing to file");
 
                 // new file
                 match create_file(&config.readings_dir) {
@@ -85,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
                             Err(e) => {
                                 eprintln!(
                                     "could not flush finished archive {}: {}",
-                                    finished.archive_name,
+                                    finished.full_path.display(),
                                     e.error()
                                 );
                             }
@@ -155,16 +157,57 @@ fn create_file(dir: &Path) -> Result<Archive, std::io::Error> {
     let latest_file_time = Utc::now().format(debug_format).to_string();
     let archive_name = format!("logs_{}.jsonl", latest_file_time); // 2026-09-09T16.jsonl
 
-    let path = dir.join(&archive_name);
+    let path: PathBuf = dir.join(&archive_name);
 
     let file = OpenOptions::new().create(true).append(true).open(&path)?;
 
     let archive = Archive {
         writer: BufWriter::new(file),
-        archive_name: archive_name,
         latest_file_time: latest_file_time,
+        full_path: path,
     };
     return Ok(archive);
+}
+
+fn compress_archive(path: &Path) -> Result<(), std::io::Error> {
+    let tmp_path = path.with_extension("jsonl.zst.tmp");
+    let final_path = path.with_extension("jsonl.zst");
+
+    // Two open files: the finished archive to read, the temp file to write.
+    let mut source = File::open(path)?;
+    let destination = File::create(&tmp_path)?;
+
+    let mut encoder = Encoder::new(destination, 0)?;
+    encoder.include_checksum(true)?;
+
+    // The line that actually compresses. The encoder is itself a writer, so
+    // every byte copied into it comes out compressed into the temp file.
+    let bytes_in = io::copy(&mut source, &mut encoder)?;
+
+    // Required: writes the zstd frame epilogue and hands the File back.
+    let destination = encoder.finish()?;
+    destination.sync_all()?;
+    drop(destination);
+
+    // The temp file only takes its real name once it is complete.
+    std::fs::rename(&tmp_path, &final_path)?;
+
+    let bytes_out = std::fs::metadata(&final_path)?.len();
+    println!(
+        "compressed {} -> {} ({bytes_in} -> {bytes_out} bytes)",
+        path.display(),
+        final_path.display()
+    );
+
+    // TODO(verify): decompress final_path to a sink and compare the byte
+    // count with the original's size, before trusting it.
+    // TODO(delete): remove the original only after that check passes.
+    Ok(())
+}
+
+// Uncompress
+fn verify_compression(initial_byte_count: u64, compressed_file_path: &Path) {
+
 }
 
 fn backoff_delay(config: &BackoffConfig, attempts: u32) -> Duration {
@@ -250,6 +293,6 @@ struct BackoffConfig {
 
 struct Archive {
     writer: BufWriter<File>,
-    archive_name: String,
     latest_file_time: String,
+    full_path: PathBuf,
 }
