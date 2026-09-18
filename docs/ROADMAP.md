@@ -1,141 +1,104 @@
 # Roadmap
 
-**Current position:** Week 0 — skeleton created, nothing built. First
-unassisted read of PostHog's `rust/capture` done and graded
-(`docs/reading/capture-service.md`). Verdict: strong inference about what the
-service is for, weak navigation. Fix was structural, not knowledge — read
-`lib.rs` second, always.
+**Current position (2026-09-18).** `ingest` is built and running: Jetstream
+over WebSocket with the required subprotocol, reconnect with capped
+exponential backoff, a read timeout derived from the measured 30s keepalive,
+hourly archive rotation, and zstd compression that is verified before the
+original is deleted. Ten decisions recorded. Nothing downstream of the disk
+exists yet — no broker, no store, no worker.
+
+Phases, not weeks. The original plan was dated and the dates stopped being
+true; what remains is the order, which still holds.
 
 Three tracks run in parallel. Reading PostHog's implementation of a component
-is the research phase for building ours, so the hours overlap.
+is the research for building ours, so the hours overlap.
 
-- **Track 1 — Build** (~60%): the pipeline itself. Also timed-build rehearsal.
-- **Track 2 — Contribute** (~25%): PRs into `PostHog/posthog`, filtered to
-  `feature/team-ingestion` — contributing to a large real-world Rust project.
-- **Track 3 — Read** (~15%): their implementation as design reference, plus one
-  unassisted 25-minute read per week.
-
-Architecture defence is not a percentage. It is a fixed Friday ritual, because
-defending an open-ended design out loud is central to engineering and worth
-deliberate practice.
+- **Track 1 — Build** (~60%): the pipeline itself.
+- **Track 2 — Contribute** (~25%): PRs into `PostHog/posthog` — practice on a
+  large real-world Rust codebase that someone else maintains.
+- **Track 3 — Read** (~15%): their implementation as a design reference, plus
+  one unassisted 25-minute read per cycle.
 
 ---
 
-## Week 1 — Thin slice, end to end
+## Phase 1 — Ingest — **done**
 
-Reading (Mon): get `PostHog/posthog` running locally. Read `rust/capture`
-properly, AI on this time — specifically `lib.rs`, `router`, `v0_endpoint`,
-`sinks`. Notes to `docs/reading/capture-service.md`.
+Jetstream consumer in Rust: reconnect, backoff, stall detection, archive to
+disk, hourly rotation, verified zstd compression.
 
-Build:
-- Jetstream WebSocket consumer in Rust, with reconnect and cursor persistence.
-- Raw archive to local disk, zstd, **with a retention cap** — disk is the
-  binding constraint at 114 GB free.
-- Minimal capture: validate, normalise, produce to `murmur.events`.
-- Single-partition Kafka is fine this week.
-- Node worker: consume, write batches to ClickHouse.
-- One working query that returns something true about the last hour.
-- Prometheus + Grafana: events/sec in, events/sec out, consumer lag, p99.
+Still open from this phase: cursor persistence (the hand-written component,
+untouched), the `serde_json` unwrap on the hot path, graceful shutdown, and a
+retention cap that the docs call for and the code does not implement.
 
-Config comes from **environment variables**, not files. PostHog uses
-`envconfig` and `Config::init_from_env()` for exactly this reason — it is the
-convention for containerised services. Match it.
+## Phase 2 — One event to a query — **current**
 
-Hand-written component: **cursor persistence only.** Not the whole consumer.
-It forces `Result`, `?`, file I/O, and serde, and if it takes six hours instead
-of one it does not sink the week.
+See `docs/tasks/pipeline-thin-slice.md`, whose first slice has its own
+document, `docs/tasks/infra-kafka-clickhouse.md`.
 
-Grafana must exist before Thursday night, because the 24-hour clock has to
-start then. It is not a Friday task.
+A broker and ClickHouse running locally, events produced from Rust, consumed
+and batched into ClickHouse, and one query that says something true about the
+last hour. Single partition is fine.
 
-Done when: it has survived 24 hours unattended and the dashboard proves it.
+**Done when:** an event you can name goes into the socket and comes back out
+of a SQL query.
 
-Track 2: one issue in an ingestion-area crate triaged — reproduce it and
-comment. No PR needed.
+## Phase 3 — Instrument it, then leave it running
 
----
+Prometheus scraping every service, Grafana with events/sec in, events/sec out,
+consumer lag and p99. Telemetry (`docs/tasks/tracing-logging.md`) lands here at
+the latest, since a run you cannot diagnose the next morning is not a run.
 
-## Week 2 — Find the wall
+**Done when:** it has survived 24 hours unattended and the dashboard proves it.
 
-Reading (Mon): their Node ingestion path — `nodejs/src/ingestion/`, in
-particular `ingestion-consumer.ts` and `pipelines/`. (Earlier versions of this
-roadmap pointed at `nodejs/src/worker/ingestion/event-pipeline`, which no longer
-exists — they restructured.) Also `rust/capture`'s `global_rate_limiter` and
-`ordering` modules — a large share of their capture service is backpressure and
-overflow, which is the whole subject of this week.
+## Phase 4 — Find the wall
 
-Build:
-- Replay harness: read the corpus, replay at configurable multiplier.
-- Push to 50x. Find what breaks first. **Predict it before you measure**, then
-  check whether you were right — that gap is the lesson.
-- Profile the actual bottleneck. One real optimisation, before/after numbers in
-  `docs/BENCHMARKS.md`.
-- Partition properly. Choose a key, justify it in DECISIONS, then observe skew.
+- Replay harness: read the corpus, replay at a configurable multiplier.
+- Push to 50x. **Predict what breaks first before measuring**, then check
+  whether you were right — that gap is the lesson.
+- Profile the actual bottleneck. One real optimisation, before and after
+  numbers in `docs/BENCHMARKS.md`.
+- Partition properly. Choose a key, justify it in `DECISIONS.md`, then observe
+  the skew.
 - Hot-key overflow: detect high-volume keys, reroute to
-  `murmur.events.overflow`, relax ordering, skip enrichment, drop nothing,
-  still return success.
+  `murmur.events.overflow`, relax ordering, skip enrichment, drop nothing.
 
-Done when: you can state a sustained events/sec figure with p99 and the
+**Done when:** you can state a sustained events/sec figure with p99 and the
 conditions it was measured under.
 
-Track 2: first PR opened.
+## Phase 5 — Identity and failure
 
----
-
-## Week 3 — Identity and failure
-
-Reading (Mon): their person-processing and merge logic, which now spans two
-languages — `nodejs/src/ingestion/common/persons` on the Node side, and the Rust
-`personhog-*` crates (`personhog-identity`, `-router`, `-writer`, `-leader`,
-`-replica`, `-coordination`) which the Node side calls over protobuf. Note
-`personhog-stateright` implies formal model-checking; leader election and
-replicas imply a replicated stateful service. Their own docs call this the most
-complex step in the pipeline, and the architecture backs that up.
-
-Build:
-- Identity resolution: DID as stable ID, handle as mutable alias. PostgreSQL
-  lookup with Redis cache in the hot path. Handle the merge case when two
-  identities turn out to be the same actor.
-- Measure the cost of adding a stateful lookup to the hot path. This is the
-  interesting number.
+- Identity resolution: DID as the stable ID, handle as a mutable alias.
+  PostgreSQL lookup with a Redis cache in the hot path, and the merge case
+  where two identities turn out to be one actor.
+- Measure what a stateful lookup costs the hot path. That is the interesting
+  number.
 - Multi-tenancy: tenant filters, per-tenant quotas, and a deliberate noisy
-  neighbour test (one tenant subscribing to everything).
-- Graceful shutdown and health, modelled on their `common/lifecycle`: trap
-  signals, prestop check, wait for background components to finish cleanly.
-  Without this, "what happens if it dies mid-write" has no answer.
-- Two injected failures, each with a postmortem: kill Kafka mid-write; throttle
-  or stall ClickHouse. Verify no double-counting on recovery.
+  neighbour test.
+- Graceful shutdown and health, modelled on their `common/lifecycle`.
+- Two injected failures with postmortems: kill the broker mid-write; stall
+  ClickHouse. Verify no double-counting on recovery.
 
-Done when: two postmortems exist and the recovery path is proven, not assumed.
+**Done when:** two postmortems exist and the recovery path is proven rather
+than assumed.
 
----
+## Later
 
-## Timed-build simulations
-
-First one at the end of Week 3, then roughly monthly.
-
-Eight hours. A problem I did not choose. Empty directory. AI on and used hard.
-Ship something that runs and is instrumented, then write up what was cut and
-why.
-
-The thing being practised is scoping in the first thirty minutes, not typing
-speed. Expect the first attempt to go badly and to be the most informative.
+Move the deployment to a real Linux box. Re-run the benchmark suite there —
+those are the numbers worth publishing, since Docker on macOS distorts disk
+I/O. Then the product layer: trend and anomaly surfacing, and a tenant-facing
+view.
 
 ---
 
-## After week 3 — sustainable pace
+## Rituals
 
-Drop to 10-15 h/week. Move the deployment to a real Linux box (Hetzner ~€50/mo,
-or Oracle Cloud Always Free ARM: 4 cores / 24 GB, genuinely free but often
-capacity-constrained). Re-run the benchmark suite there — those are the numbers
-you publish, since Docker on macOS distorts I/O.
+**Architecture defence.** Once a cycle, the assistant examines me on an
+open-ended design problem I have not seen — 45 minutes, no notes, no lookups.
+Then written feedback on where the reasoning was sound and where it was
+hand-waving. Kept because defending a design out loud is how you find out
+whether you understand it.
 
-Then: the product layer (trend and anomaly surfacing, tenant-facing UI), and
-the write-ups.
-
-## Portfolio evidence
-
-This project doubles as portfolio evidence: benchmarks, profiling artifacts,
-incident postmortems, and defensible architecture decisions are exactly the
-kind of thing worth pointing to later. That is a side effect, not the goal —
-the goal is the capability itself.
+**Timed build.** Periodically: eight hours, a problem I did not choose, an
+empty directory, AI on and used hard. Ship something that runs and is
+instrumented, then write up what was cut and why. What is being practised is
+scoping in the first thirty minutes.

@@ -1,6 +1,6 @@
 # Postmortems
 
-One file per failure, injected or organic. Week 3 requires two: Kafka killed
+One file per failure, injected or organic. Phase 5 requires two: Kafka killed
 mid-write, and ClickHouse throttled or stalled.
 
 Each entry: what broke, how it was detected (which metric moved), the blast

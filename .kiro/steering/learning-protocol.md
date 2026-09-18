@@ -9,9 +9,9 @@ understanding defeats it. Enforce these even when I push back in the moment.
 The capabilities worth building here are the ones that compound and transfer:
 
 - **Reasoning about design out loud.** Taking an open-ended problem with many
-  reasonable approaches and defending a choice. This is the core of good
-  engineering day-to-day, and it is also what open-ended technical interviews
-  are built around — same skill, two contexts.
+  reasonable approaches and defending a choice. It is also the fastest way to
+  find out whether I actually understand a design: a choice I cannot defend is
+  usually one I never really made.
 - **Building something real from zero, fast, under a time box.** Scoping a thin
   slice in the first thirty minutes and shipping something that runs and is
   instrumented.
@@ -110,16 +110,17 @@ Weekly, take something built earlier and **change it**. Add a config field,
 change the batching rule, make the retention cap dynamic, swap the partition key.
 
 If I can only run the code, I learned nothing. If I can change it, I learned it.
-A better test than recall, and closer to the actual job.
+A better test than recall, and closer to how code is really used — anything
+worth keeping gets changed far more often than it gets written.
 
 ## Architecture defence — the primary drill
 
 This is now the main event, not a checkbox before shipping. Defending an
-open-ended design out loud is a large part of being a good engineer, and it is
-something exercised both in interviews and in the job itself — worth roughly two
-hours of focused practice a week.
+open-ended design out loud is where understanding either holds up or falls
+apart, and there is no way to discover which except by doing it under
+questioning. Worth roughly two hours of focused practice per cycle.
 
-Weekly, on Friday, you examine me:
+Once a cycle, you examine me:
 
 - Pose an open-ended ingestion or pipeline design problem I have not seen.
   Not necessarily this project — adjacent domains are better, because the real
@@ -205,13 +206,35 @@ version should cost an hour, not a day.
   architecture defence — if the decision is not written down, I will not be
   able to defend it a month later.
 
-## Weekly rhythm
+## The cycle
 
-- **Monday** — read their implementation of the component I am about to build.
-  AI on. Notes to `docs/reading/`. Then plan the week's thin slice.
-- **Tuesday–Thursday** — build. Full speed, AI used hard. This is also
-  timed-build practice, so notice how I scope and where I waste time.
-- **Friday** — measure against the replay corpus, update `BENCHMARKS.md` and
+Named days were dropped once the schedule stopped being true. The order is
+what mattered, not the calendar.
+
+- **Read** — their implementation of the component about to be built. AI on.
+  Notes to `docs/reading/`. Then scope the thin slice.
+- **Build** — full speed, AI used hard. This is also timed-build practice, so
+  notice how I scope and where I waste time.
+- **Close** — measure against the replay corpus, update `BENCHMARKS.md` and
   `DECISIONS.md`, ship. Then the architecture defence. Then one contribution
-  attempt on `PostHog/posthog`, filtered to `feature/team-ingestion`.
-- **One 25-minute unassisted read** somewhere in the week, graded.
+  attempt on `PostHog/posthog`.
+- **One 25-minute unassisted read** per cycle, graded.
+
+## Non-negotiables
+
+These are the things that make the project count. Do not let me skip them.
+
+1. **Instrumented before optimised.** Throughput, consumer lag and p99 exist
+   before any optimisation. Never optimise without a measurement identifying
+   the bottleneck.
+2. **Runs continuously against the live firehose.** Not a demo started by
+   hand. The operational pain is the point.
+3. **Every number is reproducible** against the recorded replay corpus.
+4. **Real failures, written up.** Each injected or organic failure gets a
+   postmortem in `docs/postmortems/`.
+5. **I must be able to explain every line.** If I cannot defend a design
+   decision without assistance, it does not ship.
+
+**What "done" looks like for a phase:** a working end-to-end path, a number
+that moved, and a paragraph explaining why. Not a complete feature set. Ship
+the core, then layer.

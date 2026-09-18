@@ -13,12 +13,11 @@ was not wanted. Consequences accepted — uncompressed orphans from earlier
 runs, stale `.tmp` files, and the rare `.jsonl`/`.zst` pair left by a crash
 between rename and delete.
 
-Still owed: the retention cap is listed here as out of scope, but
-`WEEK-1.md:38` and `ROADMAP.md:32` still call for one, so the docs and the
-code disagree. And the batch-over-streaming choice — the measurements below —
-still has no entry in `docs/DECISIONS.md`.
+Still owed: the retention cap, which `ROADMAP.md` lists among phase 1's open
+items and the code does not implement. And the batch-over-streaming choice —
+the measurements below — still has no entry in `docs/DECISIONS.md`.
 
-Source of truth: `docs/WEEK-1.md` (item 6, Tuesday), `docs/DECISIONS.md`
+Source of truth: `docs/ROADMAP.md` (phase 1), `docs/DECISIONS.md`
 (2026-09-01 backpressure entry).
 
 **Not the hand-written component.** That is item 5, cursor persistence. AI
@@ -52,7 +51,7 @@ so there is no unit you can hand to a replay run, and no point at which
 compression could happen. `BufWriter` only flushes on drop, and `main` loops
 forever — so nothing ever drops, and the corpus has no defined boundary.
 
-**Why now.** The replay corpus is the input to Week 2's replay harness and the
+**Why now.** The replay corpus is the input to phase 4's replay harness and the
 regression suite behind every `docs/BENCHMARKS.md` number. It has to be a set
 of finished, verifiable files before anything can replay it.
 
@@ -145,9 +144,9 @@ Plus two behavioural checks:
 
 ## Out of scope
 
-**Retention cap.** `docs/WEEK-1.md:38` and `docs/ROADMAP.md:32` both call for
-one. Deprecated on the grounds that size is not a constraint — one day or one
-week of data is enough for proof of work. **This deferral needs a line in
+**Retention cap.** `docs/ROADMAP.md` still lists one among phase 1's open
+items. Deprecated on the grounds that size is not a constraint — a day or a
+week of data is enough to work against. **This deferral needs a line in
 `docs/DECISIONS.md`** or the docs will keep contradicting the code.
 
 ## Follow-ups this surfaced

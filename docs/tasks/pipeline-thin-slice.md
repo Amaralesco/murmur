@@ -2,15 +2,14 @@
 
 **Status: TODO** (opened 2026-09-18)
 
-Source of truth: `docs/WEEK-1.md` (Wednesday and Thursday),
-`.kiro/steering/architecture.md`.
+Source of truth: `docs/ROADMAP.md` (phase 2), `.kiro/steering/architecture.md`.
 
 ---
 
 ## The story
 
-Today `ingest` archives the firehose to disk and stops there. Kafka,
-ClickHouse and the Node worker — most of the architecture — have never run.
+Today `ingest` archives the firehose to disk and stops there. Kafka and
+ClickHouse — most of the architecture — have never run.
 This story ends when **one event you can name goes into the socket and comes
 back out of a SQL query**.
 
@@ -19,7 +18,7 @@ Not a feature set. One event, provably, through every stage.
 **Why now.** `ingest` is by a distance the most developed part of the project:
 reconnect, backoff, stall detection, rotation, verified compression, ten
 recorded decisions. The remaining learning is in the parts that have never
-run — a message broker, a columnar store, and the language boundary.
+run — a message broker and a columnar store.
 
 ## Ground rule for this story
 
@@ -31,11 +30,18 @@ slices.
 
 ## Slice 1 — the infrastructure runs
 
-Docker Compose with Kafka and ClickHouse. Nothing else yet.
+**Has its own document: `docs/tasks/infra-kafka-clickhouse.md`.**
 
-**Done when:** you create a topic, produce a message and consume it back with
-the console tools, and `SELECT 1` answers from `clickhouse-client`. No Rust,
-no Node.
+The largest slice in this story by some distance, and the one whose failure
+mode is least obvious. Read the advertised-listener section there before
+writing any YAML — the symptom is "works inside the container, my host client
+connects and then dies", and it looks like a bug in your code.
+
+Docker Compose with a Kafka-compatible broker and ClickHouse. Nothing else
+yet.
+
+**Done when:** both are reachable from your host rather than only from inside
+Docker, and both survive a `down` / `up`. No Rust, no Node.
 
 ## Slice 2 — a table that holds an event
 
@@ -58,18 +64,20 @@ Wire the producer into the live path, so events from the firehose land in
 **Done when:** the console consumer shows Jetstream events flowing while
 `ingest` runs.
 
-## Slice 5 — the Node worker consumes
+## Slice 5 — a consumer reads the topic
 
-A TypeScript consumer that prints what it receives. Your first TypeScript in
-this project, so keep it to consuming and printing.
+A second Rust binary that consumes `murmur.events` and prints what it
+receives. Consumer groups and offsets are the new material here; keep it to
+consuming and printing.
 
-**Done when:** it prints events that Rust produced.
+**Done when:** it prints events that the producer wrote, and restarting it
+resumes from where it stopped rather than from the beginning.
 
-## Slice 6 — the worker writes to ClickHouse
+## Slice 6 — the consumer writes to ClickHouse
 
 Batch the consumed events and insert them.
 
-**Done when:** `SELECT count()` grows while the worker runs.
+**Done when:** `SELECT count()` grows while the consumer runs.
 
 ## Slice 7 — one true sentence
 
@@ -92,9 +100,11 @@ A query that says something true about the last hour.
 - **The table.** Engine, `ORDER BY`, and which fields. `seq`, `did`,
   `collection`, `time` and the record are all candidates; you do not need all
   of them.
-- **The Node Kafka client.** PostHog uses `node-rdkafka` (native bindings,
-  a build step). `kafkajs` is pure JavaScript and much easier to start with.
-  Different trade-off from theirs, and defensible.
+- **Where the consumer lives.** A third crate in the workspace, or a second
+  binary inside an existing one? It is a separate process either way.
+- **Offset commits.** Commit before writing to ClickHouse, or after? Before
+  risks losing a batch on a crash; after risks writing it twice. Delivery is
+  already at-least-once, so this decides which failure you prefer.
 - **Batching in the worker.** Size, time, or both — and what happens to a
   partial batch when the process stops.
 - **Duplicates.** Delivery is at-least-once and the Jetstream cursor is
@@ -106,10 +116,10 @@ A query that says something true about the last hour.
 | What | Where |
 |---|---|
 | Rust Kafka client | `rdkafka 0.37.0`, `posthog/rust/Cargo.toml:194` |
-| Node ClickHouse client | `@clickhouse/client ^1.12.0`, `posthog/nodejs/package.json:72` |
-| Node Kafka client (theirs) | `node-rdkafka ^3.6.1`, same file, `:130` |
+| Rust ClickHouse client | `clickhouse 0.13.2`, `posthog/rust/Cargo.toml:263` |
+| Consumer loop to model on | `posthog/rust/kafka-deduplicator/src/kafka/batch_consumer.rs:356-390` |
 | ClickHouse DDL to read | `posthog/posthog/clickhouse/migrations/sql/`, `posthog/bin/clickhouse-logs.sql` |
-| Their Node ingestion path | `posthog/nodejs/src/ingestion/ingestion-consumer.ts` |
+| Their Rust ingestion consumer | `posthog/rust/ingestion-consumer/` |
 
 ## Out of scope
 

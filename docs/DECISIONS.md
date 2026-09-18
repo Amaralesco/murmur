@@ -333,3 +333,58 @@ latency, is what makes the trigger worth watching.
 **Also worth recording.** Verification roughly doubles the I/O per rotation: the
 compressed file is written, then read back and decompressed in full. That is the
 price of never deleting an original on the strength of an unchecked `.zst`.
+
+---
+
+## 2026-09-18 — The project is for learning Rust, not for a job
+
+**Context.** `project-context.md` opened with "deliberate skill development
+toward an ingestion pipeline engineer role (PostHog-style: billions of
+events/month, Rust + Node, Kafka, ClickHouse, PostgreSQL, Redis)". Nearly every
+other choice inherited from that sentence: the language split, the contribution
+track filtered to one team, the interview-shaped rituals, the week numbering.
+
+That is no longer the aim. The goal is learning Rust.
+
+**Decision.** Learning Rust is the purpose, and the docs now say so.
+
+**Consequence: the consumer is Rust, and Node is deferred.** The 2026-09-01
+entry kept Node for the `worker` on one surviving reason — practising both
+languages — having already discarded the other as out of date. Remove the role
+that wanted both languages and nothing holds Node up. `architecture.md` now
+reads "Rust everywhere", with TypeScript available later as its own exercise if
+an API layer warrants it.
+
+**Consequence: `project-context.md` is dissolved.** Its product description
+moved to a new `README.md`, which the repo did not have. Its non-negotiables
+and its definition of a finished phase moved to `learning-protocol.md`, where
+they are enforceable. The job framing is deleted.
+
+**Consequence: the schedule is gone.** `WEEK-1.md` was a day-by-day plan whose
+days expired weeks ago; it is deleted, and its Jetstream protocol notes — which
+are still correct and still easy to get wrong — are extracted to
+`docs/jetstream.md`. `ROADMAP.md` is recut into phases. Named days are removed
+from `learning-protocol.md`; the rhythm survives as read, build, close.
+
+**Kept: Track 2 and the rituals.** Contributing to `PostHog/posthog` is good
+Rust practice whether or not a job is in view, so it stays, minus the filter to
+one team. The architecture defence stays because defending a design out loud is
+how you discover whether you understand it. The timed build stays because
+scoping under pressure is a skill in itself.
+
+**Rejected: keeping Node for the worker.** The cost of dropping it is real and
+accepted: the project will not demonstrate Node, and PostHog's
+`nodejs/src/ingestion/` stops being usable as an answer key, since you cannot
+read a reference implementation in a language you do not write. Set against
+that, this story's subject is Kafka and ClickHouse, and stacking a third
+unknown on top would dilute it.
+
+**Rejected: rewriting the history in this file.** Earlier entries mention days,
+weeks and a job target because that is what was true when they were written.
+Editing them would make the record dishonest and destroy the reason the file
+exists.
+
+**Note on an older objection.** The 2026-09-01 entry resisted enlarging the Rust
+surface because non-completion was the binding risk. 2026-09-09 already replaced
+completion with learning as the validator; with Rust itself now the goal, a
+larger Rust surface is the point rather than the risk.

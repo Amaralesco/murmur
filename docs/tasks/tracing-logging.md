@@ -11,7 +11,7 @@ converted alongside, rather than converting `ingest` twice.
 The cost being accepted: the 24-hour unattended run needs logs you can
 diagnose the next morning, so that milestone moves further out.
 
-Source of truth: `docs/WEEK-1.md` (items 1-2, Tuesday), `.kiro/steering/
+Source of truth: `docs/ROADMAP.md` (phase 3), `.kiro/steering/
 learning-protocol.md`.
 
 ---
@@ -137,7 +137,7 @@ noise without deleting code. No timestamps, so you cannot tell when anything
 happened. No module targets, so you cannot say "debug for `ingest`, warn for
 everything else".
 
-**Why now.** `docs/WEEK-1.md` requires surviving 24 hours unattended and being
+**Why now.** Phase 3 of the roadmap requires surviving 24 hours unattended and being
 able to diagnose it afterwards. Four lines per event at firehose rate is not a
 log you can read the next morning. The archive-compression task also depends on
 this: its crash-inspection story assumes you can see *why* the process died.
@@ -233,7 +233,7 @@ This finding is evidence for that review, not a reason to relitigate now.
       difference between a readable overnight log and 4.6 million lines.
 - [ ] **Output format.** PostHog switches on level: human-readable when
       `DEBUG`, JSON otherwise so Loki/Grafana can extract fields
-      (`capture/src/main.rs:60-79`). Grafana arrives Thursday.
+      (`capture/src/main.rs:60-79`). Grafana arrives in phase 3.
 - [ ] **`LOG_LEVEL` vs `RUST_LOG`.** `telemetry.rs` makes config the default and
       lets `RUST_LOG` override with per-module directives. Confirm that is what
       you want, since it means an env var not in `config.rs` can change

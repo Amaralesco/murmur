@@ -44,14 +44,16 @@ Each is a real problem in this domain, not a contrived exercise.
 
 ## Language boundaries (intentional)
 
-- **Rust** for `ingest` and `capture` only — the hot path. Smallest possible
-  surface so it stays finishable, and it is where allocation, copy avoidance,
-  and async runtime behaviour actually matter.
-- **Node/TypeScript** for `worker` and `api`. Practising both languages is a
-  goal of the project, and PostHog's real worker is Node.
+- **Rust everywhere.** `ingest`, `capture` and the consumer that writes to
+  ClickHouse are all Rust. The project exists to learn Rust, so a second
+  language subtracts from the point rather than adding to it.
+- **Node/TypeScript is deferred, not forbidden.** It was originally chosen for
+  `worker` and `api` in order to practise both languages — see `DECISIONS.md` 2026-09-18. If an
+  API or front-end layer later warrants TypeScript, it can be its own
+  exercise, taken on when Kafka and ClickHouse are no longer new.
 
-Do not suggest rewriting the worker in Rust for performance without a
-measurement showing the worker is the bottleneck.
+Rust is also where allocation, copy avoidance and async runtime behaviour are
+visible, which was the original reason the hot path was Rust.
 
 ## Infrastructure stance
 

@@ -14,4 +14,5 @@ Target metric is **throughput per core per euro**, not absolute volume.
 
 ---
 
-_No entries yet. First baseline due end of Week 1._
+_No entries yet. First baseline due at the end of phase 2, when an event
+reaches ClickHouse._
