@@ -26,6 +26,15 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 use zstd::{Decoder, Encoder};
 
+/// Archive rotation boundary. Zero-padded and most-significant-first, so
+/// lexicographic order matches chronological order. UTC, so daylight saving
+/// cannot produce two files with the same name.
+///
+/// Both the file name and the boundary check derive from this one string: if
+/// they ever disagreed, rotation would fire against a name it did not create.
+/// Append `%M` to rotate every minute when testing.
+const ROTATION_FORMAT: &str = "%Y-%m-%dT%H";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // TEMPORARY slice-2 test. Delete once compression runs from rotation.
@@ -49,7 +58,6 @@ async fn main() -> anyhow::Result<()> {
 
     // ########## File section ##########
     std::fs::create_dir_all(&config.readings_dir)?;
-    let debug_format = "%Y-%m-%dT%H%M";
     let mut archive = create_file(&config.readings_dir).expect("could not create archive file");
 
     // ########## Connection Loop ##########
@@ -74,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
         // ########## Message Loop ##########
         loop {
             // Is this a big toll on a process that is meant to be as quick as possible
-            if archive.latest_file_time != Utc::now().format(debug_format).to_string() {
+            if archive.latest_file_time != Utc::now().format(ROTATION_FORMAT).to_string() {
                 println!("🚨\n🚨\n🚨\n🚨NEW FILE🚨\n🚨\n🚨\n🚨\n");
 
                 // new file
@@ -106,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
                     Err(e) => {
                         println!("error:{}", e);
                         // keep printing into the old file instead
-                        archive.latest_file_time = Utc::now().format(debug_format).to_string();
+                        archive.latest_file_time = Utc::now().format(ROTATION_FORMAT).to_string();
                     }
                 }
             }
@@ -162,9 +170,8 @@ async fn connect(url: &str) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>
 }
 
 fn create_file(dir: &Path) -> Result<Archive, std::io::Error> {
-    let debug_format = "%Y-%m-%dT%H%M";
 
-    let latest_file_time = Utc::now().format(debug_format).to_string();
+    let latest_file_time = Utc::now().format(ROTATION_FORMAT).to_string();
     let archive_name = format!("logs_{}.jsonl", latest_file_time); // 2026-09-09T16.jsonl
 
     let path: PathBuf = dir.join(&archive_name);
