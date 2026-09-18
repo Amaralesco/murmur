@@ -1,10 +1,62 @@
 # Task — replace `println!` with levelled logging (`tracing`)
 
-Disposable working document. Delete when the "Done when" checks pass.
+**Status: TODO — deferred** (2026-09-18), until `capture` exists.
+
+Not because it stopped mattering. `murmur-common::telemetry` is shared
+infrastructure meant for both binaries, and `DECISIONS.md` 2026-09-02 already
+makes building `capture` the trigger to review what belongs in `common`.
+Doing telemetry then means the new service is born with it and `ingest` gets
+converted alongside, rather than converting `ingest` twice.
+
+The cost being accepted: the 24-hour unattended run needs logs you can
+diagnose the next morning, so that milestone moves further out.
 
 Source of truth: `docs/WEEK-1.md` (items 1-2, Tuesday), `.kiro/steering/
-learning-protocol.md`. Listed in `disposable/session-handover.md` as known
-defect #3.
+learning-protocol.md`.
+
+---
+
+## Added requirement — change the level at runtime
+
+Not just a level fixed at boot. The justification is specific to murmur:
+restarting to turn logging up currently **loses data**, because reconnect
+resubscribes from "now" and the cursor is not persisted. Observing more must
+not cost a restart.
+
+**Mechanism, and there is only one.** `tracing_subscriber::reload::Layer`
+wraps a filter and returns a `Handle`; `handle.reload(new_filter)` swaps it
+while the process runs. Present in tracing-subscriber 0.3.20 and not behind a
+feature flag, so it needs no new dependency. The only change it forces is
+that `telemetry::init` must **return** the handle instead of swallowing the
+filter.
+
+Everything else is about what *triggers* a call to `reload`:
+
+| Trigger | Expressiveness | Cost |
+|---|---|---|
+| SIGUSR1 / SIGUSR2 | poor — a signal carries no payload, so cycle or toggle only | none; needs the pid |
+| SIGHUP + re-read a file | full directive string | a file to own; needs the pid |
+| poll a file on a timer | full directive string | a stat every N seconds, N seconds of latency |
+| HTTP admin endpoint | full, scriptable via curl | an HTTP server — **but Prometheus needs one anyway**, so possibly one extra route |
+
+**Open questions, to settle before building:**
+
+- One global level, or a full `EnvFilter` directive (`info,events=trace`)?
+  The handle can swap an entire filter, so expressiveness costs nothing at
+  the mechanism end — only at the trigger end, which is what rules signals
+  out.
+- Who triggers it: a human at 3am, or a script?
+- Ephemeral until restart, or written back to config?
+- How near is the Prometheus endpoint? That one answer probably decides
+  between the timer and the HTTP route.
+
+**Why PostHog's `debug_or_info!` does not transfer.** Their `chatty_debug_enabled`
+is not config at all — it is an HTTP request header
+(`capture/src/payload/recordings.rs:58`), so the level varies *per request*
+inside one process. That is why a macro is needed there. A murmur config
+value is fixed at boot, which is what `LOG_LEVEL` already is, so the macro
+would duplicate a level. Per-category control without a macro is a `target:`
+on the call site plus a directive in the filter.
 
 ---
 

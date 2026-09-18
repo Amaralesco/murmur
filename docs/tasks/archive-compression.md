@@ -1,10 +1,25 @@
 # Task — hourly batch compression of the raw archive
 
-Disposable working document. Delete when the "Done when" checks pass.
+**Status: DONE** (2026-09-18). Kept for the reasoning, not the checklist.
+
+What shipped: rotation on a wall-clock boundary, archive directory from
+config, compression with verification before rename, original deleted only
+after the check passes. Rotation is hourly via the `ROTATION_FORMAT`
+constant in `main.rs` — a constant rather than a config field, deliberately,
+since both the file name and the boundary check must derive from one string.
+
+Cut: sub-task 5, the startup scan for orphaned files. Retroactive compression
+was not wanted. Consequences accepted — uncompressed orphans from earlier
+runs, stale `.tmp` files, and the rare `.jsonl`/`.zst` pair left by a crash
+between rename and delete.
+
+Still owed: the retention cap is listed here as out of scope, but
+`WEEK-1.md:38` and `ROADMAP.md:32` still call for one, so the docs and the
+code disagree. And the batch-over-streaming choice — the measurements below —
+still has no entry in `docs/DECISIONS.md`.
 
 Source of truth: `docs/WEEK-1.md` (item 6, Tuesday), `docs/DECISIONS.md`
-(2026-09-01 backpressure entry). This is item 6 from
-`disposable/tuesday-remaining.md`.
+(2026-09-01 backpressure entry).
 
 **Not the hand-written component.** That is item 5, cursor persistence. AI
 codegen is allowed here if you ask for it.

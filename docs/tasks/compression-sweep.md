@@ -1,9 +1,21 @@
 # Task — compress finished archive files with a sweep
 
-Disposable working document. Delete when the "Done when" checks pass.
+**Status: DONE** (2026-09-18). Kept for the reasoning, not the checklist.
 
-Replaces sub-tasks 4 and 5 of `disposable/archive-compression.md`. Background
-reasoning (batch over streaming, measured numbers) lives there.
+| Slice | State |
+|---|---|
+| 1 — full path in `Archive` | done |
+| 2 — compress one file (compress, sync, verify, rename, delete) | done, verified with the zstd CLI |
+| 3 — the sweep | **cut** — retroactive compression not wanted |
+| 4 — wire into rotation, in the background | wiring done; `spawn_blocking` deferred behind a measured trigger, see `DECISIONS.md` 2026-09-17 |
+| 5 — step through it in a debugger | done |
+
+Measured on the way: 3.61x on a fixed 864,619-byte archive, 3.86-3.88x on two
+live rotations, all passing `zstd -t` with `Check: XXH64` present and no
+`.tmp` left behind.
+
+Replaces sub-tasks 4 and 5 of `archive-compression.md`. Background reasoning
+(batch over streaming, measured numbers) lives there.
 
 **Not the hand-written component.** That is item 5, cursor persistence.
 
