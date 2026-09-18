@@ -1,6 +1,8 @@
 mod config;
 
+use futures_util::future::ok;
 use rustls::server::Accepted;
+use rustls::Writer;
 use tokio::time::{sleep, timeout};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
@@ -22,14 +24,15 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use zstd::Encoder;
+use zstd::{Decoder, Encoder};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // TEMPORARY slice-2 test. Delete once compression runs from rotation.
     // Note the argument is the SOURCE .jsonl; the .tmp name is derived inside.
-    compress_archive(Path::new("data/tmp/logs_2026-09-14T1155.jsonl"))?;
-    return Ok(());
+    // compress_archive(Path::new("data/tmp/logs_2026-09-14T1155.jsonl"))?;
+    // compress_archive(Path::new("data/tmp/logs_2026-09-14T1155.jsonl"))?;
+    // return Ok(());
 
     // ########## Connection section ##########
     dotenvy::dotenv().ok();
@@ -83,6 +86,13 @@ async fn main() -> anyhow::Result<()> {
                                 drop(file);
                                 //TODO(compress): hand finished.archive_name to the
                                 //background compression task.
+                                if let Err(e) = compress_archive(&finished.full_path) {
+                                    eprintln!(
+                                        "could not compress {}: {}",
+                                        finished.full_path.display(),
+                                        e
+                                    );
+                                }
                             }
                             Err(e) => {
                                 eprintln!(
@@ -169,11 +179,10 @@ fn create_file(dir: &Path) -> Result<Archive, std::io::Error> {
     return Ok(archive);
 }
 
-fn compress_archive(path: &Path) -> Result<(), std::io::Error> {
+fn compress_archive(path: &Path) -> anyhow::Result<()> {
     let tmp_path = path.with_extension("jsonl.zst.tmp");
     let final_path = path.with_extension("jsonl.zst");
 
-    // Two open files: the finished archive to read, the temp file to write.
     let mut source = File::open(path)?;
     let destination = File::create(&tmp_path)?;
 
@@ -182,32 +191,48 @@ fn compress_archive(path: &Path) -> Result<(), std::io::Error> {
 
     // The line that actually compresses. The encoder is itself a writer, so
     // every byte copied into it comes out compressed into the temp file.
-    let bytes_in = io::copy(&mut source, &mut encoder)?;
+    let number_bytes_compressed = io::copy(&mut source, &mut encoder)?;
 
     // Required: writes the zstd frame epilogue and hands the File back.
     let destination = encoder.finish()?;
     destination.sync_all()?;
     drop(destination);
 
-    // The temp file only takes its real name once it is complete.
-    std::fs::rename(&tmp_path, &final_path)?;
-
-    let bytes_out = std::fs::metadata(&final_path)?.len();
+    let bytes_out = std::fs::metadata(&tmp_path)?.len();
     println!(
-        "compressed {} -> {} ({bytes_in} -> {bytes_out} bytes)",
+        "compressed {} -> {} ({number_bytes_compressed} -> {bytes_out} bytes)",
         path.display(),
-        final_path.display()
+        tmp_path.display()
     );
 
-    // TODO(verify): decompress final_path to a sink and compare the byte
-    // count with the original's size, before trusting it.
-    // TODO(delete): remove the original only after that check passes.
+    if let Err(e) = verify_compression(number_bytes_compressed, &tmp_path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(e);
+    }
+
+    std::fs::rename(&tmp_path, &final_path)?;
+
+    std::fs::remove_file(path)?;
     Ok(())
 }
 
 // Uncompress
-fn verify_compression(initial_byte_count: u64, compressed_file_path: &Path) {
+fn verify_compression(initial_byte_count: u64, compressed_file_path: &Path) -> anyhow::Result<()> {
+    let source = File::open(compressed_file_path)?;
+    let mut decoder = Decoder::new(source)?;
 
+    let bytes_uncompressed = io::copy(&mut decoder, &mut io::sink())?;
+
+    anyhow::ensure!(
+        bytes_uncompressed == initial_byte_count,
+        "verification failed for {}: expected {initial_byte_count}, got {bytes_uncompressed}",
+        compressed_file_path.display()
+    );
+    println!(
+        "Verification completed. # bytes Before {initial_byte_count}, got {bytes_uncompressed}"
+    );
+
+    Ok(())
 }
 
 fn backoff_delay(config: &BackoffConfig, attempts: u32) -> Duration {

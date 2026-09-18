@@ -34,3 +34,8 @@ grafana-data/
 clickhouse-data/
 kafka-data/
 postgres-data/
+
+# Assistant guidance and local state — not part of the project
+CLAUDE.md
+CLAUDE.local.md
+.claude/

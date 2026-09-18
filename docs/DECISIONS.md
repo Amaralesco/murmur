@@ -278,3 +278,58 @@ fall proportionally once the window is an hour.
 deliberately, with measured numbers — currently lives only in
 `disposable/archive-compression.md`, which is gitignored and disposable. It
 needs its own entry here when compression actually ships.
+---
+
+## 2026-09-17 — Compression runs inline on the message loop, not in a background task
+
+**Context.** At rotation, `ingest` compresses the finished archive and verifies
+it by decompressing it again. Both happen on the same task that reads the
+WebSocket, so the read loop is paused for as long as they take. The alternative
+is handing the work to `tokio::task::spawn_blocking` and returning to the socket
+immediately.
+
+**Measured**, on the real corpus rather than synthetic data:
+
+| What | Result |
+|---|---|
+| zstd throughput, level 1 / 3 / 9 | 250 / 218 / 99 MB/s |
+| Real archive compressed | 864,619 → 239,682 bytes (3.61x), `zstd -t` passes, `Check: XXH64` present |
+| Event rate at `collections=app.bsky.feed.post` | 53.7 events/s, 932 bytes/event → ~180 MB/hour raw |
+| Jetstream keepalive ping interval | 30.00s ± 0.07, both idle and while carrying 5,311 events per 100s |
+| Server's patience for an unanswered ping | connection closed ~5s later |
+
+Throughput figures come from 200 single-threaded runs including process-spawn
+overhead, so they are a lower bound on speed and an upper bound on time.
+
+**Derived, not measured.** A 180 MB hourly file compresses in ~0.83s. The
+verification pass decompresses the same content, which is faster than
+compressing it — call it a few tenths of a second. **~1.1s per rotation**, at
+hourly volume. At the current minute granularity the files are roughly twenty
+times smaller.
+
+**Decision.** Run both inline. ~1.1s against a ~5s budget before Jetstream
+gives up on us is four to five times the margin, and the pause loses nothing:
+messages queue in the socket and server buffers and are read when the loop
+returns, exactly as the 2026-09-01 backpressure entry describes.
+
+**Rejected: `spawn_blocking` now.** It would cost a `'static` closure with
+cloned paths, a guard so two compressions cannot overlap at the next rotation,
+and a way to surface errors from a task nobody awaits. All of that buys an
+improvement too small to measure at current volumes.
+
+**Revisit when any of these is true:**
+
+- a rotation stall is **measured** above ~2s
+- `JETSTREAM_COLLECTIONS` is widened beyond `app.bsky.feed.post`, which
+  multiplies file size by an unknown but large factor
+- the compression level is raised above 3 (level 9 is less than half as fast)
+- files grow while cursor persistence is still unbuilt
+
+**The risk being accepted.** If a stall ever does exceed the budget, Jetstream
+disconnects, and until cursor persistence exists the reconnect resubscribes from
+"now" — so the gap is lost rather than replayed. That consequence, not the
+latency, is what makes the trigger worth watching.
+
+**Also worth recording.** Verification roughly doubles the I/O per rotation: the
+compressed file is written, then read back and decompressed in full. That is the
+price of never deleting an original on the strength of an unchecked `.zst`.
