@@ -388,3 +388,64 @@ exists.
 surface because non-completion was the binding risk. 2026-09-09 already replaced
 completion with learning as the validator; with Rust itself now the goal, a
 larger Rust surface is the point rather than the risk.
+
+---
+
+## 2026-09-21 — Apache Kafka, not Redpanda
+
+**Context.** Slice 1 of the pipeline story needs a broker running locally, and
+`docs/tasks/infra-kafka-clickhouse.md` left the choice open. Redpanda and
+Apache Kafka both speak the Kafka wire protocol, so any client works against
+either and the choice is reversible at the Compose file, not in application
+code.
+
+**Decision.** Apache Kafka, in KRaft mode — no Zookeeper.
+
+**Reason.** Kafka is far more widely used, which makes it the more valuable
+thing to learn. Every article, Stack Overflow answer, book and war story
+assumes Kafka, so what is read transfers directly to what is running. That
+alignment is the whole reason, and under a protocol where learning is the
+validator it outweighs operational convenience.
+
+**Rejected: Redpanda.** The case for it was real and is what PostHog runs in
+dev (`redpandadata/redpanda:v25.1.9`): a single C++ binary, no JVM, no
+Zookeeper, faster to start and with far fewer knobs to get wrong. Redpanda is
+not Kafka — it is an independent reimplementation of the protocol — so
+learning it would have meant learning a compatible substitute rather than the
+thing itself.
+
+**Cost accepted.** More configuration surface, a JVM, and slower startup. The
+larger cost is to the answer key: `posthog/docker-compose.base.yml:209-231` is
+no longer a line-for-line reference for the broker service, since its flags are
+Redpanda's. What still transfers is the part that matters — the two-listener
+structure that makes the broker reachable from the host, which is a property of
+the Kafka protocol and not of either implementation.
+
+---
+
+## 2026-09-21 — One Compose file, not a dev/prod split
+
+**Context.** PostHog keeps eight Compose files over a shared
+`docker-compose.base.yml`, each environment adding what is specific to it —
+which is why `base.yml` declares no `ports` for ClickHouse and
+`dev.yml:504-508` does. Publishing a port is an environment decision, not a
+property of the service.
+
+**Decision.** One `docker-compose.yml`. No dev/prod split.
+
+**Reason.** murmur has no production. There is no server and no deployment
+target; the pipeline story ends with a SQL query on a laptop. Eight files
+answer a problem of many environments and dozens of services, and neither
+exists here.
+
+**Rejected: a `prod.yml` identical to `dev.yml`.** The case for it was that
+having both would show the question had been considered. This file is that
+evidence, and it is better evidence, because it holds the reasoning where a
+duplicate holds none. A second file that nothing ever runs also drifts
+silently — dev changes, prod does not, and nothing fails to reveal it.
+
+**Revisit when** the same service needs two configurations at once, or a real
+deployment target appears. The split earns its keep only once the files
+genuinely differ, and the differences are known: which ports are published to
+the host, the `restart` policy, resource limits, and whether the data volume is
+a bind mount or a named one.
