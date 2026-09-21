@@ -56,6 +56,28 @@ Jetstream.
 
 **Done when:** the console consumer prints your string.
 
+### Then automate it — the first test in the repo
+
+Slice 1 proved the broker by hand: create a topic, produce, consume it back.
+That proof is worth keeping, and now is when it is worth automating, because
+one test can cover the broker and the producer in a single pass rather than
+two half-tests written months apart.
+
+It is an **integration** test, not a unit test — it needs a real broker and
+real I/O, so it is seconds per run, not microseconds, and belongs in the
+crate's `tests/` directory rather than beside the code.
+
+Two ways to get a broker, and this is the decision:
+
+- **`testcontainers`** starts its own Kafka from inside the test and tears it
+  down after. Clean state every run, nothing to have running first. PostHog
+  takes this route — `posthog/rust/Cargo.toml:276`.
+- **Point at the running Compose stack.** Faster and simpler, but the test
+  fails when you forgot to bring the stack up, and tests share state.
+
+**Done when:** `cargo test` produces a message and reads it back, with no
+manual step before it.
+
 ## Slice 4 — real events reach the topic
 
 Wire the producer into the live path, so events from the firehose land in

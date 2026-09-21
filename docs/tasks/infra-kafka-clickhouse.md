@@ -53,22 +53,9 @@ deliberate exclusion, not an oversight: SASL and certificates would cost a day
 and teach you nothing about ingestion. Write it down as a decision so the
 security question reads as answered rather than forgotten.
 
-**R7 — the acceptance check is a script, not a memory.** The proof that R2
-holds — create a topic, produce a message, consume it back, all from the host
-— is checked in as a runnable script that exits non-zero when it fails. Run by
-hand it is a sequence you have to remember correctly; as a script it is
-something you re-run after every change to the Compose file, which is when the
-listener configuration silently breaks.
-
-Shell and the Kafka CLI tools are enough. It is an *integration* test, not a
-unit test: it needs a real broker and real I/O, so it belongs beside the
-infrastructure rather than in a Rust crate.
-
-**This does not replace the Rust test in slice 3**, and is not made redundant
-by it. They fail for different reasons: this one says the broker is reachable
-and configured correctly, and the Rust one says the producer speaks to it
-correctly. When slice 3 breaks, running this first tells you which half to
-look at.
+The acceptance check below is run by hand for this slice. Automating it waits
+until Rust can produce, so that one test covers the broker and the producer
+together — see `docs/tasks/pipeline-thin-slice.md`, after slice 3.
 
 Q: Feed me the list of services required to start up
 A: Two services. That's all. Everything else is out of scope for this slice.
