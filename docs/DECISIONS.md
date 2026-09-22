@@ -449,3 +449,40 @@ deployment target appears. The split earns its keep only once the files
 genuinely differ, and the differences are known: which ports are published to
 the host, the `restart` policy, resource limits, and whether the data volume is
 a bind mount or a named one.
+
+---
+
+## 2026-09-22 — No authentication and no TLS on the local stack
+
+**Context.** R6 of slice 1 asks for this to be written down, so that the
+security question reads as answered rather than forgotten. Both services
+needed a deliberate setting to get there. Kafka's listeners are `PLAINTEXT`.
+The ClickHouse image goes further than doing nothing: at startup it writes
+`users.d/default-user.xml`, which restricts the passwordless `default` user
+to connections from inside the container. From the host the result is
+`Authentication failed`, while `/ping` still answers `Ok.` — so the lockdown
+is invisible to a healthcheck and first appears as a query error.
+
+**Decision.** No authentication and no TLS. Kafka stays `PLAINTEXT`.
+ClickHouse sets `CLICKHOUSE_SKIP_USER_SETUP: 1`, which stops the startup
+script writing that file and lets `default` in from anywhere without a
+password.
+
+**Reason.** The stack runs on one laptop and is never exposed. SASL and
+certificates would cost a day and teach nothing about ingestion, which is
+what this story is for.
+
+**Rejected: credentials for ClickHouse (`admin` / `admin`).** Considered and
+dropped the same afternoon. The costs were concrete: a password committed in
+the Compose file, and a user and password carried through `config.rs` from
+slice 2 onwards, for a stack that never leaves the machine.
+
+**Condition.** No auth is safe only while nothing outside the laptop can
+reach the ports. That is not yet true. The Compose file publishes on all
+interfaces — `"8123:8123"`, `"9092:9092"` — which binds `0.0.0.0`, so
+anything on the same network can reach both services unauthenticated.
+Prefixing the mappings with `127.0.0.1:` is what makes this decision sound.
+
+**Revisit when** anything faces a network: a second machine, a cloud
+deployment, a shared environment. `CLICKHOUSE_SKIP_USER_SETUP` and the
+`PLAINTEXT` listeners are the two switches to flip.

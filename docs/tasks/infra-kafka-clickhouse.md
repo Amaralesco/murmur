@@ -1,6 +1,7 @@
 # Task — a broker and ClickHouse running locally
 
-**Status: TODO** (opened 2026-09-18)
+**Status: DONE** (opened 2026-09-18; all checks pass 2026-09-22 — see Outcome
+at the bottom)
 
 Slice 1 of `docs/tasks/pipeline-thin-slice.md`. Nothing else in that story can
 start until this is done.
@@ -110,6 +111,9 @@ Two listeners, two ports, two advertised addresses. Your host connects on
 
 ## Decisions you own
 
+- **DECIDED — Apache Kafka**, 2026-09-21, recorded in `DECISIONS.md`. The
+  original framing is kept below, since the rejected option is the half worth
+  remembering.
 - **Redpanda or Apache Kafka.** PostHog runs **Redpanda**
   (`redpandadata/redpanda:v25.1.9`) in dev — Kafka-API compatible, one binary,
   no JVM, no Zookeeper. Apache Kafka in KRaft mode is the real thing and is
@@ -136,10 +140,15 @@ Two listeners, two ports, two advertised addresses. Your host connects on
 docker compose up -d
 docker compose ps                    # both healthy, not merely running
 
-# broker, from your host — not from inside the container
-<create topic murmur.events>
-<produce a message>
-<consume it back>
+# broker, from your host — not from inside the container      # ALL PASS
+kafka-topics --bootstrap-server localhost:9092 --create \
+  --topic murmur.events --partitions 1 --replication-factor 1
+
+kafka-console-producer --bootstrap-server localhost:9092 \
+  --topic murmur.events                       # type a line, then Ctrl-D
+
+kafka-console-consumer --bootstrap-server localhost:9092 \
+  --topic murmur.events --from-beginning --max-messages 1
 
 # clickhouse, from your host
 curl http://localhost:8123/ping      # expect: Ok.
@@ -168,3 +177,33 @@ exactly why it isn't.
 
 PostgreSQL, Redis, Prometheus, Grafana, authentication, TLS, more than one
 broker, more than one partition. Each has its own slice or its own week.
+
+---
+
+## Outcome (2026-09-22)
+
+All Done-when checks pass: both services report healthy; broker
+produce/consume from the host; ClickHouse ping and an unauthenticated query
+from the host; a ClickHouse table and a Kafka topic both survive `down`/`up`.
+
+Found and fixed on the way: the `kafka-data` volume was mounted at
+`/var/lib/kafka/data`, a path the `apache/kafka` image never writes to — its
+default is `/tmp/kafka-logs`. The broker was healthy and forgot everything on
+every recreate. `KAFKA_LOG_DIRS` now points it at the mount. A green
+healthcheck says nothing about whether a volume is doing its job.
+
+Carried forward:
+
+- Published ports bind to all interfaces (`0.0.0.0`), not to localhost as R6
+  assumes. With no auth, anything on the same network can reach both
+  services. Fixed by prefixing the port mappings with `127.0.0.1:`. The
+  controller port 9093 is published too, and nothing on the host needs it.
+- `KAFKA_ADVERTISED_LISTENERS` advertises only `localhost` — works from the
+  host, breaks for any container talking to the broker. The two-listener fix
+  is described above. ClickHouse's Kafka engine or a containerised consumer
+  will hit it.
+- Auto-create topics is still on; `KAFKA_NUM_PARTITIONS: 3` applies to any
+  topic created by accident.
+- Persistence: named volumes. The bind-mount entries in `.gitignore` are
+  stale.
+- Topic naming: periods (`murmur.events`). Never mix in underscores.

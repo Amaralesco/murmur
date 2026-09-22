@@ -18,6 +18,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka-data:/var/lib/kafka/data
     ## Above is pasted from documentation
@@ -31,8 +32,29 @@ services:
        retries: 3
 
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.9.1
+    container_name: click_house
+    ports:
+      - "8123:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: 1
+    healthcheck:
+       test: wget -q --spider http://127.0.0.1:8123/ping
+       start_period: 30s
+       start_interval: 2s
+       interval: 30s
+       timeout: 5s
+       retries: 3
+    
+
+
 volumes:
   kafka-data:
+  clickhouse-data:
+
 
 
 
