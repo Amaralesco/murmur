@@ -1,6 +1,6 @@
 # Story — one event from the firehose to a ClickHouse query
 
-**Status: TODO** (opened 2026-09-18)
+**Status: CURRENT** (opened 2026-09-18)
 
 Source of truth: `docs/ROADMAP.md` (phase 2), `.kiro/steering/architecture.md`.
 
@@ -30,7 +30,7 @@ slices.
 
 ## Slice 1 — the infrastructure runs
 
-**Has its own document: `docs/tasks/infra-kafka-clickhouse.md`.**
+**Has its own document: `docs/tasks/done/infra-kafka-clickhouse.md`.**
 
 The largest slice in this story by some distance, and the one whose failure
 mode is least obvious. Read the advertised-listener section there before
@@ -148,5 +148,5 @@ A query that says something true about the last hour.
 PostgreSQL, Redis, identity resolution, more than one partition, overflow
 topics, retention, Prometheus and Grafana. All of those have their own week.
 
-Telemetry (`docs/tasks/tracing-logging.md`) is deferred until `capture`
+Telemetry (`docs/tasks/medium/tracing-logging.md`) is deferred until `capture`
 exists — see that document.

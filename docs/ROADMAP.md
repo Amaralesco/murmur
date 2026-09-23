@@ -33,7 +33,7 @@ retention cap that the docs call for and the code does not implement.
 ## Phase 2 — One event to a query — **current**
 
 See `docs/tasks/pipeline-thin-slice.md`, whose first slice has its own
-document, `docs/tasks/infra-kafka-clickhouse.md`.
+document, `docs/tasks/done/infra-kafka-clickhouse.md`.
 
 A broker and ClickHouse running locally, events produced from Rust, consumed
 and batched into ClickHouse, and one query that says something true about the
@@ -45,7 +45,7 @@ of a SQL query.
 ## Phase 3 — Instrument it, then leave it running
 
 Prometheus scraping every service, Grafana with events/sec in, events/sec out,
-consumer lag and p99. Telemetry (`docs/tasks/tracing-logging.md`) lands here at
+consumer lag and p99. Telemetry (`docs/tasks/medium/tracing-logging.md`) lands here at
 the latest, since a run you cannot diagnose the next morning is not a run.
 
 **Done when:** it has survived 24 hours unattended and the dashboard proves it.

@@ -394,7 +394,7 @@ larger Rust surface is the point rather than the risk.
 ## 2026-09-21 — Apache Kafka, not Redpanda
 
 **Context.** Slice 1 of the pipeline story needs a broker running locally, and
-`docs/tasks/infra-kafka-clickhouse.md` left the choice open. Redpanda and
+`docs/tasks/done/infra-kafka-clickhouse.md` left the choice open. Redpanda and
 Apache Kafka both speak the Kafka wire protocol, so any client works against
 either and the choice is reversible at the Compose file, not in application
 code.
