@@ -6,17 +6,18 @@
 Bluesky Jetstream (WebSocket, JSON, no auth)
         |
         v
-[ingest]      Rust   -- reconnect, cursor mgmt, raw archive to disk
-        |
-        v
-[capture]     Rust   -- validate, normalise, tenant routing, hot-key detection
+[ingest]      Rust   -- reconnect, cursor mgmt, raw archive to disk,
+        |                and producing. Validation, normalisation, tenant
+        |                routing and hot-key detection are modules here,
+        |                added when needed - not a separate service.
+        |                See DECISIONS.md 2026-09-28.
         |
         +--> Kafka: murmur.events           (normal path, ordered per key)
         +--> Kafka: murmur.events.overflow  (hot keys, ordering relaxed)
         +--> Kafka: murmur.events.historical(backfill after disconnect)
                 |
                 v
-[worker]      Node/TS -- transforms, identity resolution, enrichment
+[worker]      Rust   -- transforms, identity resolution, enrichment
                 |         (PostgreSQL lookup + Redis cache in hot path)
                 v
         Kafka: murmur.clickhouse
@@ -25,8 +26,13 @@ Bluesky Jetstream (WebSocket, JSON, no auth)
         ClickHouse (events, actors)
                 |
                 v
-[api]         Node/TS -- tenant queries, trend/anomaly surfacing
+[api]         Rust   -- tenant queries, trend/anomaly surfacing
 ```
+
+Process boundaries sit where a queue already separates them. A Kafka topic is a
+transport, a buffer and a retry boundary acquired for free; inventing one
+between a socket reader and a producer is not. This is why the consumer is a
+separate crate and the producer is not — `DECISIONS.md` 2026-09-28.
 
 ## Deliberate parallels to PostHog
 
@@ -34,11 +40,11 @@ Each is a real problem in this domain, not a contrived exercise.
 
 | Their problem | Our equivalent |
 |---|---|
-| Rust capture service, fast path to Kafka | `capture` — same responsibility, same shape |
+| Rust capture service, fast path to Kafka | `ingest` — same responsibility, same shape, and like theirs a single process owning intake and producing |
 | `events_plugin_ingestion_overflow` for hot distinct IDs | viral post URIs create genuine hot partitions |
 | Person merge via `$identify` / `$anon_distinct_id` | handles are mutable, DIDs are stable → real aliasing |
 | `events_plugin_ingestion_historical` | reconnect backfill after socket drop |
-| Node.js CDP worker doing person processing | `worker`, same language, same job |
+| Node.js CDP worker doing person processing | `worker`, same job, in Rust |
 | Multi-tenant isolation and noisy neighbours | tenant filters; a tenant subscribing to `*` is the abuse case |
 | Schema evolution across 450k orgs | AT Protocol lexicons evolve; third parties invent record types |
 

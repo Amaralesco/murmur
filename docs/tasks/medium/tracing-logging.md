@@ -1,15 +1,23 @@
 # Task — replace `println!` with levelled logging (`tracing`)
 
-**Status: TODO — deferred** (2026-09-18), until `capture` exists.
+**Status: TODO — deferred** (2026-09-18), until a second binary exists: the
+slice 5 consumer crate. Backstop: phase 3, which cannot be claimed without it.
 
-Not because it stopped mattering. `murmur-common::telemetry` is shared
-infrastructure meant for both binaries, and `DECISIONS.md` 2026-09-02 already
-makes building `capture` the trigger to review what belongs in `common`.
-Doing telemetry then means the new service is born with it and `ingest` gets
-converted alongside, rather than converting `ingest` twice.
+**Trigger repaired 2026-09-28.** This was deferred "until `capture` exists", and
+`DECISIONS.md` 2026-09-28 decided `capture` will never be built — producing
+happens inside `ingest`. Left alone, that would have deferred telemetry
+indefinitely.
+
+The original reasoning survives the repair intact, because it was never about
+`capture` specifically. `murmur-common::telemetry` is shared infrastructure
+meant for more than one binary, and doing telemetry when the second binary is
+born means it starts with it while `ingest` gets converted alongside, rather
+than converting `ingest` twice. The slice 5 consumer is that second binary. It
+is also now the trigger for the `murmur-common` review that the 2026-09-02 entry
+attached to `capture`, so both land together as intended.
 
 The cost being accepted: the 24-hour unattended run needs logs you can
-diagnose the next morning, so that milestone moves further out.
+diagnose the next morning, so that milestone waits on this.
 
 Source of truth: `docs/ROADMAP.md` (phase 3), `.kiro/steering/
 learning-protocol.md`.

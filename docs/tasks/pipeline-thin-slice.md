@@ -28,7 +28,7 @@ slices.
 
 ---
 
-## Slice 1 — the infrastructure runs
+## Slice 1 — the infrastructure runs — **done 2026-09-22**
 
 **Has its own document: `docs/tasks/done/infra-kafka-clickhouse.md`.**
 
@@ -43,13 +43,14 @@ yet.
 **Done when:** both are reachable from your host rather than only from inside
 Docker, and both survive a `down` / `up`. No Rust, no Node.
 
-## Slice 2 — a table that holds an event
+## Slice 2 — a table that holds an event — **done 2026-09-23**
 
-One ClickHouse table, by hand, in SQL.
+One ClickHouse table, by hand, in SQL. `murmur.events`, defined in
+`clickhouse/schema.sql` with the reasoning in `clickhouse/schema-notes.md`.
 
 **Done when:** you `INSERT` one row and `SELECT` it back.
 
-## Slice 3 — Rust produces one message
+## Slice 3 — Rust produces one message — **current**
 
 A hardcoded string to `murmur.events`, using `rdkafka`. Nothing about
 Jetstream.
@@ -111,27 +112,33 @@ A query that says something true about the last hour.
 
 ## Decisions you own
 
-- **Where the producer lives.** `architecture.md` says `capture` validates,
-  normalises and produces, with `ingest` owning only the socket and the
-  archive. The thin slice could cheat and produce straight from `ingest`.
-  Cheating is faster now and costs a move later. Decide deliberately, because
-  building `capture` is also the trigger for the `common`-crate review in
-  `DECISIONS.md` 2026-09-02, and the point where telemetry comes back.
+**DECIDED — where the producer lives.** Inside `ingest`. `capture` is not built
+as a separate service; its responsibilities become modules there when needed.
+`DECISIONS.md` 2026-09-28, which also moves the two triggers that hung off
+`capture` — the `murmur-common` review and telemetry — onto the slice 5
+consumer crate.
+
+**DECIDED — where the consumer lives.** Its own crate in the workspace. That is
+the process boundary in this story, because a Kafka topic is already a transport
+between the two sides.
+
+**DECIDED — the table.** `ReplacingMergeTree`, sorting key
+`(jetstream_event_at, uri)`, twelve columns. Slice 2, and the reasoning is in
+`clickhouse/schema-notes.md`.
+
+**DECIDED — duplicates.** Deduplicated in ClickHouse rather than in the
+pipeline. The sorting key collapses a redelivered event while keeping two
+genuine events about one record, which was measured rather than assumed.
+
+Still open:
+
 - **What an event is on the wire.** Raw Jetstream JSON, or normalised into
   your own shape before it reaches Kafka?
-- **The table.** Engine, `ORDER BY`, and which fields. `seq`, `did`,
-  `collection`, `time` and the record are all candidates; you do not need all
-  of them.
-- **Where the consumer lives.** A third crate in the workspace, or a second
-  binary inside an existing one? It is a separate process either way.
 - **Offset commits.** Commit before writing to ClickHouse, or after? Before
   risks losing a batch on a crash; after risks writing it twice. Delivery is
   already at-least-once, so this decides which failure you prefer.
-- **Batching in the worker.** Size, time, or both — and what happens to a
+- **Batching in the consumer.** Size, time, or both — and what happens to a
   partial batch when the process stops.
-- **Duplicates.** Delivery is at-least-once and the Jetstream cursor is
-  inclusive, so the same event can arrive twice. Deduplicate, or accept and
-  record it?
 
 ## Pointers
 
@@ -148,5 +155,5 @@ A query that says something true about the last hour.
 PostgreSQL, Redis, identity resolution, more than one partition, overflow
 topics, retention, Prometheus and Grafana. All of those have their own week.
 
-Telemetry (`docs/tasks/medium/tracing-logging.md`) is deferred until `capture`
-exists — see that document.
+Telemetry (`docs/tasks/medium/tracing-logging.md`) is deferred until the slice 5
+consumer crate exists — see that document.

@@ -550,6 +550,15 @@ crate — the second consumer arriving by a different door than expected.
 Node/TS, which the 2026-09-18 entry replaced with Rust everywhere. It needs
 updating; this entry is the reasoning it should point at.
 
+**Update, same day.** `architecture.md` is corrected: the map folds producing
+into `ingest`, names the four responsibilities as modules there, states the
+"split where a queue already separates them" rule, and labels `worker` and `api`
+as Rust. Two dead triggers were found and repaired at the same time — telemetry
+(`docs/tasks/medium/tracing-logging.md`) was deferred "until `capture` exists"
+and would have been deferred forever; it and the `murmur-common` review now hang
+off the slice 5 consumer crate, which preserves the original reasoning that both
+should land when a second binary is born.
+
 **Revisit when** hot-key routing needs state, a second or third topic is
 wanted (`overflow`, `historical`), or instrumentation shows the producer
 stalling socket reads. Keeping the producer in its own module, with no Kafka
