@@ -32,7 +32,7 @@ verifies it before deleting the original.
 ## Where things are written down
 
 - **`docs/DECISIONS.md`** — every architectural choice, the options rejected,
-  and why. If it is not there, it cannot be defended a month later.
+  and why.
 - **`docs/ROADMAP.md`** — the phases and where the work currently is.
 - **`docs/BENCHMARKS.md`** — every performance claim, with the commit and the
   conditions it was measured under.
@@ -94,4 +94,4 @@ test, and the architecture defence.
    without assistance, it does not ship.
 
 `../posthog/` is a read-only clone of PostHog, used as a reference for
-production Rust. It is never edited.
+production Rust.

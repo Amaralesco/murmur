@@ -170,7 +170,6 @@ async fn connect(url: &str) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>
 }
 
 fn create_file(dir: &Path) -> Result<Archive, std::io::Error> {
-
     let latest_file_time = Utc::now().format(ROTATION_FORMAT).to_string();
     let archive_name = format!("logs_{}.jsonl", latest_file_time); // 2026-09-09T16.jsonl
 
@@ -282,9 +281,7 @@ fn handle_message(msg: Message, archive: &mut Archive) -> () {
             )
         }
         Message::Pong(_payload) => {}
-        Message::Close(_frame) => {
-            // frame is Option<CloseFrame>
-        }
+        Message::Close(_frame) => {}
         Message::Frame(_) => {}
         Message::Binary(_) => {}
     }

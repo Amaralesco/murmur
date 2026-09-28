@@ -56,13 +56,46 @@ Concretely, this blocks three things already planned:
 A restart loses position too, and for the same reason. That is the harder half
 and the one the "persistence" in the name refers to.
 
-## Why now
+## When this becomes binding
 
-The pipeline story is about getting one event through every stage. The moment
-those stages exist, the question "did we receive everything?" stops being
-theoretical, because the answer becomes a number in a query. Fixing this after
-the ClickHouse table is filling means the table's early contents are of unknown
-completeness.
+**Not during phase 2.** At the measured ~53 events/sec, filtered to one
+collection and writing about 1 MB/minute, the read loop is nowhere near
+saturated, so falling behind is unlikely. None of the pipeline slices are
+blocked by this.
+
+It becomes binding at two specific points:
+
+- **Phase 3's milestone — 24 hours unattended.** Over a day, a reconnect is
+  likely, and every one silently discards its outage window. A run that loses
+  unknown amounts of data proves the process stayed up, not that the pipeline
+  works.
+- **Phase 4's replay harness**, which replays "the corpus" at a multiplier. A
+  corpus with unrecorded holes gives throughput numbers whose denominator is
+  unknown, and the archive is also the regression suite.
+
+Also: the moment ClickHouse starts filling, "did we receive everything?" stops
+being theoretical, because the answer becomes a number in a query. Rows written
+before this is fixed are of unknown completeness, which is worth knowing when
+reading early results rather than a reason to stop.
+
+## Why it is more than a missing feature
+
+`DECISIONS.md` 2026-09-01 chose backpressure by blocking — no queue between the
+socket read and the disk write — and justified it like this:
+
+> Jetstream's per-connection buffer fills, it disconnects, and
+> **reconnect-with-cursor resumes**. Every step is bounded, visible, and
+> recoverable.
+
+That recovery step does not exist. So today the sequence is: fall behind,
+disconnect, lose the window, and see nothing in the logs or in `seq`. This task
+is what makes that decision true rather than aspirational, and the same
+reasoning covers any new work added to the blocking path — a Kafka producer
+included.
+
+The escalation valve named in that entry is a **bounded** `tokio::sync::mpsc`
+between reader and writer, added only when instrumentation shows write latency
+stalling the read loop. Unbounded is never an option.
 
 ## Done when
 

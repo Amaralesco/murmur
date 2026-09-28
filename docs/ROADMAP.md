@@ -48,11 +48,20 @@ Prometheus scraping every service, Grafana with events/sec in, events/sec out,
 consumer lag and p99. Telemetry (`docs/tasks/medium/tracing-logging.md`) lands here at
 the latest, since a run you cannot diagnose the next morning is not a run.
 
-**Done when:** it has survived 24 hours unattended and the dashboard proves it.
+**Prerequisite:** `docs/tasks/high/cursor-resume.md`. Reconnect currently
+resubscribes from "now", so every reconnect silently drops its outage window,
+and `seq` gaps are normal in a filtered stream so nothing reveals it. Over 24
+hours a reconnect is likely, which would make this milestone prove uptime rather
+than correctness.
+
+**Done when:** it has survived 24 hours unattended, the dashboard proves it, and
+no data was lost across any reconnect in that window.
 
 ## Phase 4 — Find the wall
 
-- Replay harness: read the corpus, replay at a configurable multiplier.
+- Replay harness: read the corpus, replay at a configurable multiplier. The
+  corpus has to be complete for the multiplier to mean anything — see the
+  prerequisite in phase 3.
 - Push to 50x. **Predict what breaks first before measuring**, then check
   whether you were right — that gap is the lesson.
 - Profile the actual bottleneck. One real optimisation, before and after

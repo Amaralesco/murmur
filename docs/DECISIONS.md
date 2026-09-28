@@ -486,3 +486,71 @@ Prefixing the mappings with `127.0.0.1:` is what makes this decision sound.
 **Revisit when** anything faces a network: a second machine, a cloud
 deployment, a shared environment. `CLICKHOUSE_SKIP_USER_SETUP` and the
 `PLAINTEXT` listeners are the two switches to flip.
+
+---
+
+## 2026-09-28 — `capture` is not a separate service; `ingest` produces
+
+**Context.** `.kiro/steering/architecture.md` splits the produce side in two:
+`ingest` owns the socket, cursor management and the raw archive, and a separate
+`capture` validates, normalises, routes by tenant, detects hot keys and produces
+to Kafka. That split arrived in the initial commit and has no entry in this
+file — the only structural claim in the project with no recorded reasoning.
+Slice 3 needs a producer, which forced the question.
+
+**Finding: the reference implementation does not do this.** PostHog's `capture`
+binds its own listener (`posthog/rust/capture/src/main.rs:128`) and holds
+`kafka.rs`, `s3.rs` and `fallback.rs` as sink *modules* in
+`capture/src/sinks/`. One process owns intake, validation, producing and
+archiving. There is no service in front of it, and every process boundary in
+that workspace — `ingestion-consumer`, `kafka-deduplicator`, `property-defs-rs`
+— sits downstream of a Kafka topic.
+
+**Decision.** One process owns intake, archive and producing. The
+responsibilities assigned to `capture` become modules inside `ingest` as they
+are needed. The consumer in slice 5 is a separate crate.
+
+**Reason.** Split processes where a queue already separates them. A Kafka topic
+is a transport, a buffer and a retry boundary acquired for free. Between a
+socket reader and a producer there is none, so splitting means designing one —
+and what it should carry depends on what `capture` would do, three of whose four
+jobs do not exist yet. Deferring the boundary means designing it with
+information rather than guesses.
+
+**Rejected: keeping the split.** The advantages were real and are recorded
+honestly. A separate producer process cannot delay the socket reader, which
+matters because lost firehose data is unrecoverable. It could be restarted
+without dropping the Jetstream connection. The archive would have been a
+ready-made queue, leaving `ingest` with only the loss-sensitive job of getting
+bytes to disk. And validation would have had an obvious home instead of
+accreting in the read loop.
+
+Against that: a transport designed at the point of least information; a
+component whose only content today is `send()`; two processes to run, configure
+and keep alive before anything works end to end; and pulling in the
+`murmur-common` audit and telemetry, both deliberately parked.
+
+**Consequence: the backpressure dependency now covers producing.** The
+2026-09-01 entry chose blocking over buffering because "Jetstream's
+per-connection buffer fills, it disconnects, and reconnect-with-cursor
+resumes". Cursor resume is not implemented, so that recovery step does not
+exist, and a producer on the blocking path is a second way to fall behind.
+`docs/tasks/high/cursor-resume.md` is promoted accordingly, and `ROADMAP.md`
+names it a prerequisite of phase 3's 24-hour milestone. The escalation valve is
+unchanged: a **bounded** `tokio::sync::mpsc`, added only when instrumentation
+shows the write path stalling the read loop.
+
+**Consequence: a review trigger has to move.** The 2026-09-02 entry set the
+`murmur-common` audit to happen "when `capture` is built". Since `capture` will
+not be built, that trigger would never fire. It moves to the slice 5 consumer
+crate — the second consumer arriving by a different door than expected.
+
+**Consequence: `architecture.md` is now wrong.** Its component map still shows
+`ingest` → `capture` → Kafka, and separately still labels `worker` and `api` as
+Node/TS, which the 2026-09-18 entry replaced with Rust everywhere. It needs
+updating; this entry is the reasoning it should point at.
+
+**Revisit when** hot-key routing needs state, a second or third topic is
+wanted (`overflow`, `historical`), or instrumentation shows the producer
+stalling socket reads. Keeping the producer in its own module, with no Kafka
+types in the message loop, is what keeps that move a file move.
