@@ -1,8 +1,8 @@
 mod config;
+mod producer;
 
 use futures_util::future::ok;
 use rustls::server::Accepted;
-use rustls::Writer;
 use tokio::time::{sleep, timeout};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
@@ -16,6 +16,9 @@ use envconfig::Envconfig;
 use futures_util::StreamExt;
 use serde::Deserialize;
 use tokio_tungstenite::tungstenite::protocol::Message;
+
+use crate::producer::EventProducer;
+
 
 use core::arch;
 // File Writing
@@ -47,6 +50,13 @@ async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
     let config = Config::init_from_env().expect("invalid configuration");
+
+    // Temporary test
+    let event_producer = EventProducer::new(&config.kafka_brokers)?;
+    let (partition, offset) = event_producer
+        .send("slice-3", "hello from ingest")
+        .await?;
+    println!("delivered to partition {partition} at offset {offset}");
 
     let backoff = BackoffConfig {
         base_delay_secs: config.base_delay_secs,
@@ -155,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
         // Program never gives up: with no supervisor to restart and no alerting,
         // stopping would just leave the process silently dead. Capped delay,
         // uncapped attempts.
-        consecutive_failures += 1 // ← this line
+        consecutive_failures += 1
     }
 }
 

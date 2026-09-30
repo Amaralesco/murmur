@@ -12,6 +12,8 @@ pub struct Config {
 
     pub jetstream_collections: String,
 
+    pub kafka_brokers: String,
+
     #[envconfig(default = "1")]
     pub base_delay_secs: u64,
 
