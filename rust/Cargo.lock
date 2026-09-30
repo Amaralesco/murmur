@@ -455,7 +455,9 @@ name = "murmur-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "envconfig",
+ "serde",
  "tracing",
  "tracing-subscriber",
 ]

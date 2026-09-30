@@ -1,32 +1,25 @@
-mod config;
-mod producer;
+use ingest::config::Config;
+use ingest::producer::EventProducer;
+use murmur_common::jetstream::JetstreamMessage;
 
-use futures_util::future::ok;
-use rustls::server::Accepted;
 use tokio::time::{sleep, timeout};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Error;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
-use tracing_subscriber::fmt::time;
 
-use crate::config::Config;
 use envconfig::Envconfig;
 use futures_util::StreamExt;
-use serde::Deserialize;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-use crate::producer::EventProducer;
 
-
-use core::arch;
 // File Writing
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use zstd::{Decoder, Encoder};
 
 /// Archive rotation boundary. Zero-padded and most-significant-first, so
@@ -40,12 +33,6 @@ const ROTATION_FORMAT: &str = "%Y-%m-%dT%H";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // TEMPORARY slice-2 test. Delete once compression runs from rotation.
-    // Note the argument is the SOURCE .jsonl; the .tmp name is derived inside.
-    // compress_archive(Path::new("data/tmp/logs_2026-09-14T1155.jsonl"))?;
-    // compress_archive(Path::new("data/tmp/logs_2026-09-14T1155.jsonl"))?;
-    // return Ok(());
-
     // ########## Connection section ##########
     dotenvy::dotenv().ok();
 
@@ -54,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
     // Temporary test
     let event_producer = EventProducer::new(&config.kafka_brokers)?;
     let (partition, offset) = event_producer
-        .send("slice-3", "hello from ingest")
+        .send("manual test", "Manual test after integration")
         .await?;
     println!("delivered to partition {partition} at offset {offset}");
 
@@ -295,33 +282,6 @@ fn handle_message(msg: Message, archive: &mut Archive) -> () {
         Message::Frame(_) => {}
         Message::Binary(_) => {}
     }
-}
-
-#[derive(Deserialize)]
-struct JetstreamMessage {
-    payload: Commit,
-    //   phones: Vec<String>,
-    //   opreation: Enum <create,post,commit>
-}
-#[derive(Deserialize)]
-struct Commit {
-    record: Option<Record>,
-    cid: Option<String>,
-    did: String,
-    seq: u64,
-    operation: Operation,
-}
-#[derive(Deserialize)]
-struct Record {
-    text: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Operation {
-    Create,
-    Update,
-    Delete,
 }
 
 struct BackoffConfig {
