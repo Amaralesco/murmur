@@ -1,7 +1,30 @@
 use envconfig::Envconfig;
 use std::num::NonZeroU64;
 use std::path::PathBuf;
+use std::str::FromStr;
 use tracing::Level;
+
+/// How often the archive starts a new file.
+pub enum Rotation {
+    Minutely,
+    Hourly,
+    Daily,
+}
+
+impl FromStr for Rotation {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "minutely" => Ok(Rotation::Minutely),
+            "hourly" => Ok(Rotation::Hourly),
+            "daily" => Ok(Rotation::Daily),
+            other => Err(format!(
+                "unknown ROTATION {other:?}: expected minutely, hourly or daily"
+            )),
+        }
+    }
+}
 
 #[derive(Envconfig)]
 pub struct Config {
@@ -29,6 +52,9 @@ pub struct Config {
 
     #[envconfig(default = "data/readings")]
     pub readings_dir: PathBuf,
+
+    #[envconfig(default = "hourly")]
+    pub rotation: Rotation,
 }
 
 impl Config {
