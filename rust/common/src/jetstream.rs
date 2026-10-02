@@ -14,7 +14,7 @@
 //!   text, and a reply is also a `feed.post`.
 
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The envelope. Everything useful is nested under `payload`.
 #[derive(Deserialize, Debug)]
@@ -61,7 +61,7 @@ pub struct Record {
     pub created_at: Option<String>,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Operation {
     Create,

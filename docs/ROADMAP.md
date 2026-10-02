@@ -70,6 +70,9 @@ no data was lost across any reconnect in that window.
   the skew.
 - Hot-key overflow: detect high-volume keys, reroute to
   `murmur.events.overflow`, relax ordering, skip enrichment, drop nothing.
+  This is the point where routing metadata moves into **Kafka headers** rather
+  than the payload, so a router can choose a topic without deserialising the
+  value. See `docs/tasks/pipeline-thin-slice.md`, slice 6.
 
 **Done when:** you can state a sustained events/sec figure with p99 and the
 conditions it was measured under.

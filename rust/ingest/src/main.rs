@@ -13,7 +13,6 @@ use envconfig::Envconfig;
 use futures_util::StreamExt;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-
 // File Writing
 use chrono::Utc;
 use std::fs::{File, OpenOptions};
@@ -38,13 +37,10 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::init_from_env().expect("invalid configuration");
 
-    // Temporary test
+    // Kafka start up
     let event_producer = EventProducer::new(&config.kafka_brokers)?;
-    let (partition, offset) = event_producer
-        .send("manual test", "Manual test after integration")
-        .await?;
-    println!("delivered to partition {partition} at offset {offset}");
 
+    
     let backoff = BackoffConfig {
         base_delay_secs: config.base_delay_secs,
         max_delay_secs: config.max_delay_secs,
@@ -54,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let url = config.jetstream_url();
 
     let rotation_format = rotation_format(&config.rotation);
-    
+
     // ########## File section ##########
     std::fs::create_dir_all(&config.readings_dir)?;
     let mut archive =
@@ -130,7 +126,7 @@ async fn main() -> anyhow::Result<()> {
                         break;
                     }
                     Some(Ok(msg)) => {
-                        handle_message(msg, &mut archive);
+                        handle_message(msg, &mut archive, &event_producer).await;
                     }
                     Some(Err(e)) => {
                         eprintln!("stream error: {e}");
@@ -251,11 +247,12 @@ fn backoff_delay(config: &BackoffConfig, attempts: u32) -> Duration {
     return Duration::from_secs(delay);
 }
 
-fn handle_message(msg: Message, archive: &mut Archive) -> () {
+async fn handle_message(msg: Message, archive: &mut Archive, event_producer: &EventProducer) -> () {
     match msg {
-        Message::Text(text) => {
-            println!("{text}");
-            let parsed: JetstreamMessage = serde_json::from_str(&text).unwrap();
+        Message::Text(raw) => {
+
+            println!("{raw}");
+            let parsed: JetstreamMessage = serde_json::from_str(&raw).unwrap();
             println!("\tseq={}", parsed.payload.seq);
 
             if let Some(record) = &parsed.payload.record {
@@ -263,12 +260,20 @@ fn handle_message(msg: Message, archive: &mut Archive) -> () {
                     println!("\ttext={text}");
                 }
             }
-            if let Err(e) = archive.writer.write_all(text.as_bytes()) {
+            // write to disk
+            if let Err(e) = archive.writer.write_all(raw.as_bytes()) {
                 eprintln!("Could not write to disk: {e}");
-                // return Err(e);
             }
             if let Err(e) = archive.writer.write_all(b"\n") {
                 eprintln!("Could not write to disk: {e}");
+            }
+            // Send to Kafka
+            // let (partition, offset) = event_producer
+            //     .send("manual test", "Manual test after integration")
+            //     .await;
+            // println!("delivered to partition {partition} at offset {offset}");
+            if let Err(e) = event_producer.send(&parsed.payload.uri(), &raw).await {
+                eprintln!("could not produce {}: {e:#}", parsed.payload.uri());
             }
         }
         Message::Ping(_payload) => {

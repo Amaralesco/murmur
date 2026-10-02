@@ -102,6 +102,43 @@ Batch the consumed events and insert them.
 
 **Done when:** `SELECT count()` grows while the consumer runs.
 
+### What is on the wire, decided in slice 4
+
+The message is the **raw Jetstream JSON**, byte-identical to the archive, with
+the `at://` URI as the Kafka key. Nothing is promoted into the payload.
+
+So the consumer parses once, into the shared type:
+
+```rust
+let parsed: JetstreamMessage = serde_json::from_str(&payload)?;
+```
+
+Every ClickHouse column comes out of that: `did`, `collection`, `rkey`, `rev`,
+`seq`, `operation`, `cid` and `time` from `parsed.payload`, `text` and
+`createdAt` from `parsed.payload.record`, `uri` from `Commit::uri()` or the
+message key, and `murmur_ingested_at` from the table's own `DEFAULT now64(3)`.
+
+The alternatives were rejected for reasons worth not relitigating:
+
+- **Promoting fields into the payload** alongside the raw JSON — an "envelope"
+  — costs about 40% more bytes to save a parse worth microseconds. Its real
+  claim was decoupling the consumer from Jetstream's shape, and that is
+  already provided by `murmur_common::jetstream`: the consumer depends on a
+  Rust type in this workspace, not on Bluesky's wire format. If AT Protocol
+  changes, one struct changes and both binaries follow.
+- **Normalising into murmur's own shape**, discarding the original, loses
+  everything not modelled — `reply`, `langs`, `embed`, `facets`. The post-shaped
+  table deferred in `clickhouse/schema-notes.md` needs `reply`, and the
+  upstream replay window is bounded, so that loss is unrecoverable rather than
+  inconvenient.
+
+**Carry forward to phase 4.** When hot-key routing needs to pick a topic
+without parsing the payload, the promoted fields belong in **Kafka headers**,
+not in the value. Headers are readable without deserialising, which is the
+whole point, and they can be added without changing the value format — so no
+migration. PostHog does exactly this: `CapturedEventHeaders` becomes
+`OwnedHeaders` alongside an untouched `data` field.
+
 ## Slice 7 — one true sentence
 
 A query that says something true about the last hour.
