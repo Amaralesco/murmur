@@ -17,11 +17,8 @@ Bluesky Jetstream (WebSocket, JSON, no auth)
         +--> Kafka: murmur.events.historical(backfill after disconnect)
                 |
                 v
-[worker]      Rust   -- transforms, identity resolution, enrichment
-                |         (PostgreSQL lookup + Redis cache in hot path)
-                v
-        Kafka: murmur.clickhouse
-                |
+[ingestion-consumer]  Rust -- consumes murmur.events. Slice 5 reads and
+                |            prints; slice 6 batches into ClickHouse.
                 v
         ClickHouse (events, actors)
                 |
@@ -33,6 +30,36 @@ Process boundaries sit where a queue already separates them. A Kafka topic is a
 transport, a buffer and a retry boundary acquired for free; inventing one
 between a socket reader and a producer is not. This is why the consumer is a
 separate crate and the producer is not — `DECISIONS.md` 2026-09-28.
+
+**Naming.** `ingestion-consumer`, not `worker`. A worker processes discrete jobs
+off a queue; this reads a stream and never finishes, which the ecosystem calls a
+consumer, a processor or — for "topic in, store out" — a sink. PostHog splits the
+same way: `ingestion-consumer` and `cohort-stream-processor` read streams,
+`batch-import-worker` and `embedding-worker` run jobs.
+
+**Where transformation belongs is three questions, not one.** An earlier version
+of this diagram assigned "transforms, identity resolution, enrichment" to one
+component. They do not share an answer:
+
+| | Belongs | Why |
+|---|---|---|
+| **Enrichment against reference data** — handle → DID, tenant metadata | ClickHouse, as a dictionary or a join | A dictionary is an external lookup table ClickHouse holds in memory and refreshes. PostHog uses them, with `dictGet`, for exchange rates and team selection. Doing the lookup per event in the pipeline instead costs a round trip on the hot path and freezes the result at insert time |
+| **Per-row reshaping on insert** | ClickHouse, as a materialized view | No state, no lookups, and the database already has the row |
+| **Identity resolution** — deciding two identifiers are one actor | a stateful component, not the database | It needs mutable state and decisions across events. ClickHouse has no transactions and performs updates as asynchronous background rewrites. PostHog spends **ten crates** on this, including leader election and a Stateright model-checked implementation |
+
+For murmur, the deliberate parallel is that handles are mutable while DIDs are
+stable. Resolving one to the other is reference data. Merging two identities
+into one actor is not, and has no home yet — phase 5 owns it.
+
+**Open, and not decided by this diagram:** the earlier version routed the
+consumer's output through a second topic, `murmur.clickhouse`, before the
+database. That hop has no entry in `DECISIONS.md` and nothing needs it yet, so
+the consumer writes ClickHouse directly. It has the same shape as the
+`ingest`/`capture` split that was dissolved on 2026-09-28 — invented up front,
+never justified — and deserves the same examination before anything is built on
+it. A second topic earns its place when something other than ClickHouse wants
+the transformed events, or when transformation becomes expensive enough to
+want its own process.
 
 ## Deliberate parallels to PostHog
 
