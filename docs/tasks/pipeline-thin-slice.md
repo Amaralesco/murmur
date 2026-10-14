@@ -50,7 +50,7 @@ One ClickHouse table, by hand, in SQL. `murmur.events`, defined in
 
 **Done when:** you `INSERT` one row and `SELECT` it back.
 
-## Slice 3 — Rust produces one message — **current**
+## Slice 3 — Rust produces one message — **done 2026-09-30**
 
 A hardcoded string to `murmur.events`, using `rdkafka`. Nothing about
 Jetstream.
@@ -79,7 +79,7 @@ Two ways to get a broker, and this is the decision:
 **Done when:** `cargo test` produces a message and reads it back, with no
 manual step before it.
 
-## Slice 4 — real events reach the topic
+## Slice 4 — real events reach the topic — **done 2026-10-02**
 
 Wire the producer into the live path, so events from the firehose land in
 `murmur.events`.
@@ -87,7 +87,9 @@ Wire the producer into the live path, so events from the firehose land in
 **Done when:** the console consumer shows Jetstream events flowing while
 `ingest` runs.
 
-## Slice 5 — a consumer reads the topic
+## Slice 5 — a consumer reads the topic — **current**
+
+**Has its own document: `docs/tasks/high/consumer-reads-topic.md`.**
 
 A second Rust binary that consumes `murmur.events` and prints what it
 receives. Consumer groups and offsets are the new material here; keep it to
