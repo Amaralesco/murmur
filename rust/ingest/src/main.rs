@@ -38,9 +38,9 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::init_from_env().expect("invalid configuration");
 
     // Kafka start up
-    let event_producer = EventProducer::new(&config.kafka_brokers)?;
+    let event_producer = EventProducer::new(&config.kafka_brokers, &config.kafka_events_topic)?;
 
-    
+
     let backoff = BackoffConfig {
         base_delay_secs: config.base_delay_secs,
         max_delay_secs: config.max_delay_secs,

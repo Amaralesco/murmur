@@ -55,6 +55,9 @@ pub struct Config {
 
     #[envconfig(default = "hourly")]
     pub rotation: Rotation,
+
+    // Avoid default so that Ingestion and Consumer share the same topic
+    pub kafka_events_topic: String,
 }
 
 impl Config {
