@@ -5,7 +5,6 @@ use rdkafka::config::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::time::Duration;
 
-
 /// How long `send` waits for room in the producer's *internal queue* before
 /// giving up. Not the delivery deadline — that is `message.timeout.ms` below.
 const ENQUEUE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -45,8 +44,10 @@ impl EventProducer {
 
         match self.producer.send(record, ENQUEUE_TIMEOUT).await {
             Ok(delivery) => Ok((delivery.partition, delivery.offset)),
-            Err((error, _returned_message)) => Err(anyhow::Error::new(error)
-                .context(format!("Kafka delivery failed for key {key} on {}", self.topic))),
+            Err((error, _returned_message)) => Err(anyhow::Error::new(error).context(format!(
+                "Kafka delivery failed for key {key} on {}",
+                self.topic
+            ))),
         }
     }
 }

@@ -23,7 +23,8 @@ pub struct JetstreamMessage {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Commit {    pub did: String,
+pub struct Commit {
+    pub did: String,
     pub collection: String,
     pub rkey: String,
     pub rev: String,
