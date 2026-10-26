@@ -343,7 +343,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "dotenvy",
  "envconfig",
  "futures-util",
  "murmur-common",
@@ -354,7 +353,6 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tracing",
- "tracing-subscriber",
  "zstd",
 ]
 
@@ -363,12 +361,11 @@ name = "ingestion-consumer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dotenvy",
  "envconfig",
  "murmur-common",
  "rdkafka",
- "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -469,6 +466,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "dotenvy",
  "envconfig",
  "serde",
  "tracing",

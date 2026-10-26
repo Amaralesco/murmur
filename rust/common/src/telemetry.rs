@@ -1,11 +1,31 @@
-use tracing::Level;
+use envconfig::Envconfig;
+use tracing::{error, info, Level};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
-/// Installs the process-wide tracing subscriber.
-///
-/// `default_level` is the baseline; `RUST_LOG`, when set, overrides it and can
-/// target individual modules (`RUST_LOG=ingest=debug,tokio=warn`).
+/// A config that can report the level its subscriber should start at.
+pub trait HasLogLevel {
+    fn log_level(&self) -> Level;
+}
+
+/// Loads `.env`, builds the config from the environment, and starts the
+/// subscriber.
+pub fn bootstrap<C>() -> anyhow::Result<C>
+where
+    C: Envconfig + HasLogLevel,
+{
+    let dotenv = dotenvy::dotenv();
+    let config = C::init_from_env()?;
+    init(config.log_level());
+
+    match dotenv {
+        Ok(path) => info!("loaded environment from {}", path.display()),
+        Err(e) => error!("could not load .env: {e}"),
+    }
+
+    Ok(config)
+}
+
 pub fn init(default_level: Level) {
     let filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::from_level(default_level).into())
