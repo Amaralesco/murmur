@@ -1,4 +1,5 @@
 use envconfig::Envconfig;
+use murmur_common::telemetry::HasLogLevel;
 use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -49,7 +50,6 @@ pub struct Config {
     #[envconfig(default = "5")]
     pub missed_pings_tolerance: NonZeroU64,
     // Todo: Make sure number of missed_pings_tolerance is at least 2
-
     #[envconfig(default = "data/readings")]
     pub readings_dir: PathBuf,
 
@@ -58,6 +58,12 @@ pub struct Config {
 
     // Avoid default so that Ingestion and Consumer share the same topic
     pub kafka_events_topic: String,
+}
+
+impl HasLogLevel for Config {
+    fn log_level(&self) -> Level {
+        self.log_level
+    }
 }
 
 impl Config {

@@ -9,9 +9,9 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Error;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-use envconfig::Envconfig;
 use futures_util::StreamExt;
 use tokio_tungstenite::tungstenite::protocol::Message;
+use tracing::{debug, error, info, trace, warn};
 
 // File Writing
 use chrono::Utc;
@@ -33,13 +33,10 @@ fn rotation_format(rotation: &Rotation) -> &'static str {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ########## Connection section ##########
-    dotenvy::dotenv().ok();
-
-    let config = Config::init_from_env().expect("invalid configuration");
+    let config: Config = murmur_common::telemetry::bootstrap()?;
 
     // Kafka start up
     let event_producer = EventProducer::new(&config.kafka_brokers, &config.kafka_events_topic)?;
-
 
     let backoff = BackoffConfig {
         base_delay_secs: config.base_delay_secs,
@@ -69,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
                 s
             }
             Err(e) => {
-                eprintln!("connect failed: {e}");
+                warn!("connect failed: {e}");
                 consecutive_failures += 1;
                 continue;
             }
@@ -79,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
         loop {
             // Is this a big toll on a process that is meant to be as quick as possible
             if archive.latest_file_time != Utc::now().format(rotation_format).to_string() {
-                println!("🚨\n🚨\n🚨\n🚨NEW FILE🚨\n🚨\n🚨\n🚨\n");
+                info!("rotating to a new archive file");
 
                 // new file
                 match create_file(&config.readings_dir, rotation_format) {
@@ -91,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
                                 //TODO(compress): hand finished.archive_name to the
                                 //background compression task.
                                 if let Err(e) = compress_archive(&finished.full_path) {
-                                    eprintln!(
+                                    error!(
                                         "could not compress {}: {}",
                                         finished.full_path.display(),
                                         e
@@ -99,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
                                 }
                             }
                             Err(e) => {
-                                eprintln!(
+                                error!(
                                     "could not flush finished archive {}: {}",
                                     finished.full_path.display(),
                                     e.error()
@@ -108,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                     Err(e) => {
-                        println!("error:{}", e);
+                        error!("could not create the next archive file: {e}");
                         // keep printing into the old file instead
                         archive.latest_file_time = Utc::now().format(rotation_format).to_string();
                     }
@@ -122,27 +119,26 @@ async fn main() -> anyhow::Result<()> {
             {
                 Ok(next_message) => match next_message {
                     Some(Ok(Message::Close(_))) => {
-                        eprintln!("server closed the connection");
+                        warn!("server closed the connection");
                         break;
                     }
                     Some(Ok(msg)) => {
                         handle_message(msg, &mut archive, &event_producer).await;
                     }
                     Some(Err(e)) => {
-                        eprintln!("stream error: {e}");
+                        warn!("stream error: {e}");
                         break;
                     }
                     None => {
-                        eprintln!("stream ended");
+                        warn!("stream ended");
                         break;
                     }
                 },
                 Err(timed_out_error) => {
-                    println!(
-                        "WARN: Connection pinged missed {} times",
-                        config.missed_pings_tolerance
+                    error!(
+                        "missed {} pings, disconnecting: {}",
+                        config.missed_pings_tolerance, timed_out_error
                     );
-                    println!("WARN: Disconnecting, error {}", timed_out_error);
                     break;
                 }
             }
@@ -175,10 +171,10 @@ fn create_file(dir: &Path, rotation_format: &str) -> Result<Archive, std::io::Er
 
     let archive = Archive {
         writer: BufWriter::new(file),
-        latest_file_time: latest_file_time,
+        latest_file_time,
         full_path: path,
     };
-    return Ok(archive);
+    Ok(archive)
 }
 
 fn compress_archive(path: &Path) -> anyhow::Result<()> {
@@ -201,7 +197,7 @@ fn compress_archive(path: &Path) -> anyhow::Result<()> {
     drop(destination);
 
     let bytes_out = std::fs::metadata(&tmp_path)?.len();
-    println!(
+    info!(
         "compressed {} -> {} ({number_bytes_compressed} -> {bytes_out} bytes)",
         path.display(),
         tmp_path.display()
@@ -230,9 +226,7 @@ fn verify_compression(initial_byte_count: u64, compressed_file_path: &Path) -> a
         "verification failed for {}: expected {initial_byte_count}, got {bytes_uncompressed}",
         compressed_file_path.display()
     );
-    println!(
-        "Verification completed. # bytes Before {initial_byte_count}, got {bytes_uncompressed}"
-    );
+    debug!("Verification completed. # bytes Before {initial_byte_count}, got {bytes_uncompressed}");
 
     Ok(())
 }
@@ -244,46 +238,44 @@ fn backoff_delay(config: &BackoffConfig, attempts: u32) -> Duration {
 
     // TODO(jitter): randomize within the delay so independent clients
     // don't all retry in lockstep against a shared public service.
-    return Duration::from_secs(delay);
+    Duration::from_secs(delay)
 }
 
 async fn handle_message(msg: Message, archive: &mut Archive, event_producer: &EventProducer) -> () {
     match msg {
         Message::Text(raw) => {
+            trace!("{raw}");
 
-            println!("{raw}");
-            let parsed: JetstreamMessage = serde_json::from_str(&raw).unwrap();
-            println!("\tseq={}", parsed.payload.seq);
+            // write to disk
+            if let Err(e) = archive.writer.write_all(raw.as_bytes()) {
+                error!("Could not write to disk: {e}");
+            }
+            if let Err(e) = archive.writer.write_all(b"\n") {
+                error!("Could not write to disk: {e}");
+            }
+
+            let parsed: JetstreamMessage = match serde_json::from_str(&raw) {
+                Ok(message) => message,
+                Err(e) => {
+                    error!("could not parse event, archived but not produced: {e}");
+                    return;
+                }
+            };
+
+            debug!("\tseq={}", parsed.payload.seq);
 
             if let Some(record) = &parsed.payload.record {
                 if let Some(text) = &record.text {
-                    println!("\ttext={text}");
+                    debug!("\ttext={text}");
                 }
             }
-            // write to disk
-            if let Err(e) = archive.writer.write_all(raw.as_bytes()) {
-                eprintln!("Could not write to disk: {e}");
-            }
-            if let Err(e) = archive.writer.write_all(b"\n") {
-                eprintln!("Could not write to disk: {e}");
-            }
             // Send to Kafka
-            // let (partition, offset) = event_producer
-            //     .send("manual test", "Manual test after integration")
-            //     .await;
-            // println!("delivered to partition {partition} at offset {offset}");
             if let Err(e) = event_producer.send(&parsed.payload.uri(), &raw).await {
-                eprintln!("could not produce {}: {e:#}", parsed.payload.uri());
+                error!("could not produce {}: {e:#}", parsed.payload.uri());
             }
         }
         Message::Ping(_payload) => {
-            println!(
-                "{}",
-                format!(
-                    "🔵PING PING PING🔵 at {}",
-                    Utc::now().format("%Y-%m-%dT%H%M")
-                )
-            )
+            debug!("ping at {}", Utc::now().format("%Y-%m-%dT%H%M"))
         }
         Message::Pong(_payload) => {}
         Message::Close(_frame) => {}
