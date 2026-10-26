@@ -1,8 +1,40 @@
 # Task — a consumer reads `murmur.events`
 
-**Status: TODO** (opened 2026-10-14)
+**Status: DONE** (opened 2026-10-14, closed 2026-10-26)
 
 Slice 5 of `docs/tasks/pipeline-thin-slice.md`.
+
+## How it was proved
+
+Both claims observed on 2026-10-26, against the live firehose.
+
+**Claim 1 — what comes out matches what went in.** `ingest` logged
+`seq=26468048910 / text=@occupydemocrats.bsky.social @democrats.org`; the
+consumer read offset 18593 carrying `"seq":26468048910` and the same text. The
+next six events matched one-to-one in order. Keys came back readable as
+`at://did:plc:…/app.bsky.feed.post/…` after switching `m.key()` to
+`m.key_view::<str>()` — with `{:?}` on raw bytes they printed as decimal arrays
+and the claim could not be checked at all.
+
+Offset 18600 was an `operation: delete` with no `cid` and no `record`. It
+parsed, archived and produced without complaint, which verifies the two
+`Option<T>` fields in `JetstreamMessage` against real data rather than
+reasoning.
+
+**Claim 2 — restarting resumes.** Across two restarts: run 1 ended at offset
+18592; run 2, with the consumer caught up, printed nothing at all rather than
+replaying; `ingest` then produced; run 3 began at 18593. No replay, no gap.
+Confirmed independently at the broker — `kafka-consumer-groups.sh --describe
+--group murmur-ingestion-consumer` showed `CURRENT-OFFSET` equal to
+`LOG-END-OFFSET` with `LAG 0` and no active members, i.e. the committed
+position outlived the process.
+
+The four decisions this slice said were owned are recorded in `DECISIONS.md`
+2026-10-26. Telemetry landed with it, in both binaries — same entry.
+
+**Not exercised:** both binaries running *simultaneously*. Every run was
+sequential, so consumer lag under sustained 53.7 events/sec is still unmeasured.
+That is phase 3's first number.
 
 ---
 
@@ -159,7 +191,7 @@ Both were deliberately pinned to "when a second binary exists", which is now:
   that crate: if the consumer does not use it, it was `ingest`-specific and
   should move back. Currently `jetstream` (the consumer needs it) and
   `telemetry` (nothing declares it).
-- **Telemetry** (`docs/tasks/medium/tracing-logging.md`). The reasoning for
+- **Telemetry** (`docs/tasks/done/tracing-logging.md`). The reasoning for
   deferring was that a second binary should be *born* with it while `ingest` is
   converted alongside, rather than converting `ingest` twice. Deferring again
   costs exactly that.

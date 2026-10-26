@@ -1,7 +1,41 @@
 # Task — replace `println!` with levelled logging (`tracing`)
 
-**Status: TODO — deferred** (2026-09-18), until a second binary exists: the
-slice 5 consumer crate. Backstop: phase 3, which cannot be claimed without it.
+**Status: DONE** (deferred 2026-09-18, closed 2026-10-26) — the trigger fired as
+designed: the consumer crate was born with telemetry and `ingest` was converted
+in the same sitting, so it was never converted twice.
+
+## What landed
+
+`pub mod telemetry;` in `common/src/lib.rs` — the module had been written since
+`01ea66f` and never declared, so it had never once compiled. Both binaries now
+boot through `murmur_common::telemetry::bootstrap`, which loads `.env`, builds
+the config, installs the subscriber and reports which `.env` it found. See
+`DECISIONS.md` 2026-10-26 for why that is a generic function over a trait rather
+than duplicated wiring.
+
+All 19 live `println!`/`eprintln!` calls in `ingest` converted, plus the
+consumer's. The level split that makes `LOG_LEVEL` a usable dial:
+
+| Level | What |
+|---|---|
+| `error!` | data lost or an operation failed — disk write, Kafka produce, compression, archive flush, failed rotation, unparseable event, ping timeout |
+| `warn!` | handled and carried on — connect failed, server closed, stream error, stream ended |
+| `info!` | once per lifecycle event — environment loaded, rotation, compression result |
+| `debug!` | per event, readable — `seq`, `text`, ping, consumer message metadata |
+| `trace!` | the raw Jetstream JSON, in both binaries |
+
+`debug` is deliberately readable and `trace` is deliberately the firehose; the
+raw payload would otherwise make `debug` useless for diagnosing anything that is
+not the payload. `println!("WARN: …")` had been hand-writing the level into the
+string, which is the clearest illustration in the repo of why this task existed.
+
+**The added runtime-reload requirement is not built, and no longer blocks
+anything** — see `DECISIONS.md` 2026-10-26. An env var plus a restart is
+acceptable for now; the component where it genuinely matters is `ingest`, and the
+reason is the unpersisted cursor (`docs/tasks/high/cursor-resume.md`).
+
+**Stale in the detail below:** the table counting ten `println!`s was written
+when there were ten. There were twenty by the time it was done.
 
 **Trigger repaired 2026-09-28.** This was deferred "until `capture` exists", and
 `DECISIONS.md` 2026-09-28 decided `capture` will never be built — producing

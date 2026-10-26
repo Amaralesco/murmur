@@ -87,9 +87,10 @@ Wire the producer into the live path, so events from the firehose land in
 **Done when:** the console consumer shows Jetstream events flowing while
 `ingest` runs.
 
-## Slice 5 — a consumer reads the topic — **current**
+## Slice 5 — a consumer reads the topic — **done 2026-10-26**
 
-**Has its own document: `docs/tasks/high/consumer-reads-topic.md`.**
+**Has its own document: `docs/tasks/done/consumer-reads-topic.md`**, including
+how both claims were proved.
 
 A second Rust binary that consumes `murmur.events` and prints what it
 receives. Consumer groups and offsets are the new material here; keep it to
@@ -98,7 +99,7 @@ consuming and printing.
 **Done when:** it prints events that the producer wrote, and restarting it
 resumes from where it stopped rather than from the beginning.
 
-## Slice 6 — the consumer writes to ClickHouse
+## Slice 6 — the consumer writes to ClickHouse — **current**
 
 Batch the consumed events and insert them.
 
@@ -169,13 +170,20 @@ between the two sides.
 pipeline. The sorting key collapses a redelivered event while keeping two
 genuine events about one record, which was measured rather than assumed.
 
+**DECIDED — group id, offset reset, commit strategy, malformed payloads.**
+Slice 5; `DECISIONS.md` 2026-10-26. Note what that entry says about commits:
+auto-commit on a timer *and* an explicit `commit_message`, with
+`enable.auto.offset.store` left on, so an offset is marked committable the
+moment `recv()` hands the message over. Fine for printing, wrong for inserting.
+
 Still open:
 
-- **What an event is on the wire.** Raw Jetstream JSON, or normalised into
-  your own shape before it reaches Kafka?
-- **Offset commits.** Commit before writing to ClickHouse, or after? Before
-  risks losing a batch on a crash; after risks writing it twice. Delivery is
-  already at-least-once, so this decides which failure you prefer.
+- **Offset commits, for real this time.** The slice 5 configuration commits
+  offsets for messages merely *received*, so a crash between receive and insert
+  loses them. Commit before writing to ClickHouse or after? Before risks losing
+  a batch; after risks writing it twice. Delivery is already at-least-once, so
+  this decides which failure you prefer — and the current setting decided
+  "before" by default rather than by choice.
 - **Batching in the consumer.** Size, time, or both — and what happens to a
   partial batch when the process stops.
 
@@ -194,5 +202,5 @@ Still open:
 PostgreSQL, Redis, identity resolution, more than one partition, overflow
 topics, retention, Prometheus and Grafana. All of those have their own week.
 
-Telemetry (`docs/tasks/medium/tracing-logging.md`) is deferred until the slice 5
-consumer crate exists — see that document.
+Telemetry landed with slice 5, in both binaries —
+`docs/tasks/done/tracing-logging.md`.

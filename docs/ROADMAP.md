@@ -45,8 +45,8 @@ of a SQL query.
 ## Phase 3 — Instrument it, then leave it running
 
 Prometheus scraping every service, Grafana with events/sec in, events/sec out,
-consumer lag and p99. Telemetry (`docs/tasks/medium/tracing-logging.md`) lands here at
-the latest, since a run you cannot diagnose the next morning is not a run.
+consumer lag and p99. Telemetry was the prerequisite and landed early, with
+slice 5 — `docs/tasks/done/tracing-logging.md`.
 
 **Prerequisite:** `docs/tasks/high/cursor-resume.md`. Reconnect currently
 resubscribes from "now", so every reconnect silently drops its outage window,

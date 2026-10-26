@@ -224,7 +224,7 @@ std / tokio: `io::copy`, `io::sink`, `fs::metadata`, `File::sync_all`,
 - **The four old `logs_*.jsonl` in `rust/`** — outside the archive directory, so
   the sweep never sees them. Move or delete by hand.
 - **Switching from minute to hourly rotation.**
-- **`tracing`** — separate task, `disposable/tracing-logging.md`.
+- **`tracing`** — separate task, `docs/tasks/done/tracing-logging.md`.
 
 ## When it ships
 

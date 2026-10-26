@@ -554,7 +554,7 @@ updating; this entry is the reasoning it should point at.
 into `ingest`, names the four responsibilities as modules there, states the
 "split where a queue already separates them" rule, and labels `worker` and `api`
 as Rust. Two dead triggers were found and repaired at the same time — telemetry
-(`docs/tasks/medium/tracing-logging.md`) was deferred "until `capture` exists"
+(`docs/tasks/done/tracing-logging.md`) was deferred "until `capture` exists"
 and would have been deferred forever; it and the `murmur-common` review now hang
 off the slice 5 consumer crate, which preserves the original reasoning that both
 should land when a second binary is born.
@@ -563,3 +563,146 @@ should land when a second binary is born.
 wanted (`overflow`, `historical`), or instrumentation shows the producer
 stalling socket reads. Keeping the producer in its own module, with no Kafka
 types in the message loop, is what keeps that move a file move.
+
+---
+
+## 2026-10-26 — Boot wiring is shared through a generic `bootstrap`, not duplicated
+
+**Context.** Telemetry was deliberately deferred until a second binary existed,
+so that the new one would be born with it and `ingest` would be converted
+alongside rather than twice. The consumer crate is that second binary. Wiring it
+up meant four statements in `main` whose order is forced by data dependencies:
+load `.env`, build `Config`, install the subscriber using the level from that
+config, then report whether `.env` loaded. Only the middle step is
+crate-specific — `ingest::config::Config` and `ingestion_consumer::config::Config`
+are different types — and it sits in the middle of three shareable ones.
+
+**Decision.** `murmur_common::telemetry::bootstrap<C>()`, generic over
+`C: Envconfig + HasLogLevel`, returning `anyhow::Result<C>`. `HasLogLevel` is a
+new trait in the same module with one method, implemented in four lines by each
+binary's `Config`. Each `main` is then one line.
+
+**Why a trait is unavoidable, not a preference.** `murmur-common` cannot name
+either `Config` type — the dependency arrow runs from the binaries to `common`,
+and reversing it is a cycle Cargo rejects. A shared function that takes "the
+config" therefore cannot name a type; it has to name a capability. Rust's
+coherence rules then put the `impl` in the binary's crate, which is why the
+boilerplate is per-binary and cannot be centralised.
+
+**Rejected.** Sharing only the `dotenvy` call: pays for an indirection and still
+leaves three statements in each `main`. Sharing the load plus a deferred report
+object: exists only to carry the dotenv outcome across the `init` call, which a
+different ordering deletes outright. Having `telemetry::init` read `LOG_LEVEL`
+from the environment itself, so the subscriber could go up before config: the
+cleanest boot and the only shape that can log a config failure, but it removes
+`LOG_LEVEL` from both `Config` structs, so the process reads a variable no struct
+declares — losing "read one file to see everything this binary takes from the
+environment", which the config convention exists to protect. Not sharing at all,
+which is what PostHog does across 27 binaries, seven of them with a hand-copied
+private `setup_tracing` and no shared helper: defensible, and declined because
+one of the two call sites did not exist yet, so the duplicate would have been
+written rather than inherited.
+
+**Consequence: a config failure cannot be a log line.** `bootstrap` returns
+before the subscriber exists when `C::init_from_env()` fails, so the error
+reaches `main` as a value and `anyhow` prints it to stderr with a non-zero exit.
+That is strictly more information than the `.expect("invalid configuration")` it
+replaced, because `envconfig::Error` names the offending variable — but it is not
+a tracing event, and the dotenv outcome is lost on that path too. Accepted
+knowingly; the alternative was the rejected option above.
+
+**Consequence: the `murmur-common` audit (2026-09-02) is closed.** `telemetry`
+now has two real callers and has earned its place. `jetstream` has one today —
+only `ingest` parses — which by the audit rule would send it back; it stays
+because slice 6 has the consumer parsing into `JetstreamMessage` for the
+ClickHouse columns, and that is a decided design rather than a hope. `common`
+gains a `dotenvy` dependency, which every future crate depending on it inherits.
+`ingest` lost `dotenvy` and `tracing-subscriber`, the consumer lost `dotenvy` and
+`serde_json`; only `common` constructs a subscriber now.
+
+**Consequence: runtime log-level reload stays deferred, with a reason.** The
+added requirement in `docs/tasks/done/tracing-logging.md` was to change the
+level without a restart. Confirmed unnecessary for now: an env var plus a restart
+is acceptable. Also confirmed that PostHog does not do it — zero occurrences of
+`tracing_subscriber::reload` or signal handling across all 98 crates; their
+`debug_or_info!` switches on an HTTP request header, per request, which a stream
+has nothing to attach to. The one component where it genuinely matters is
+`ingest`, because a restart resubscribes from "now" with the cursor unpersisted,
+and that is `docs/tasks/high/cursor-resume.md`.
+
+**Revisit when** a third binary appears and the per-binary `impl` starts to feel
+like tax, or when `ingest` needs `init` to return a reload handle and the
+consumer does not — the first concrete divergence between the two boots, which is
+the thing that would justify splitting them again.
+
+---
+
+## 2026-10-26 — The archive is written before the parse, and is a superset of the topic
+
+**Context.** `handle_message` parsed each Jetstream message with
+`serde_json::from_str(&raw).unwrap()` and only then wrote the raw bytes to the
+archive. The payload comes from a third party whose lexicons evolve and where
+anyone can invent a record type, so the parse can fail on input no local change
+can prevent. With no supervisor, a panic left the process dead; with the cursor
+unpersisted, the restart gap was unrecoverable.
+
+**Decision.** Log `error!` and skip the event instead of panicking, and move the
+archive write **above** the parse. An unparseable event is archived but not
+produced to Kafka.
+
+**Why the reordering matters more than the panic.** The old order guaranteed that
+the one event you could not understand was also the one event you did not keep —
+destroying the only evidence of what the new record type looks like. The archive
+is the durable sink; this makes it durable for precisely the cases worth
+investigating.
+
+**Consequence: the archive and the topic are no longer the same set.** The
+produce needs `parsed.payload.uri()` for the key, so a message that fails to
+parse cannot be produced. The archive is a superset. Anything later reconciling
+the two — a replay, a count, a completeness check — has to know that.
+
+**Revisit when** a malformed event is actually seen in the wild. The `error!`
+line is the trigger: it means a record type exists that `JetstreamMessage` does
+not model, and the archived bytes are the specification for fixing it.
+
+---
+
+## 2026-10-26 — Consumer group, offset reset and commit strategy
+
+**Context.** Slice 5 required a consumer and left four choices to be made
+deliberately rather than by default. Recorded here because the code answers them
+and nothing else did.
+
+**Decision — group id from config, with a default.** `GROUP_ID`, defaulting to
+`murmur-ingestion-consumer`. The group id is the identity that makes resuming
+work, so a silent change resets the consumer's position; a default in one place
+beats the same string in a `.env` on every machine.
+
+**Decision — `auto.offset.reset=earliest`.** Only consulted the first time a
+group ever reads, and inert afterwards. Earliest means a fresh group replays the
+retained history rather than silently starting at "now", because a gap is worse
+than a duplicate when ClickHouse deduplicates on `(jetstream_event_at, uri)`
+anyway.
+
+**Decision — automatic commit on a timer, plus an explicit
+`commit_message`.** Two mechanisms for one job, and `enable.auto.offset.store`
+defaults on, so an offset is marked committable the moment `recv()` hands the
+message over — before the code has looked at it. Harmless while "handled" means
+"printed". **Not harmless in slice 6**, where handled means written to
+ClickHouse: as configured, a crash between receive and insert loses those
+messages permanently. `posthog/rust/kafka-deduplicator/src/kafka/config.rs:25-41`
+sets both to false, which is the shape that makes the choice explicit.
+
+**Decision — a malformed payload is logged and skipped, not fatal.** A consumer
+that panics on one bad message can never make progress past it. A null payload
+and a non-UTF-8 payload both degrade to an empty string and a `warn!`.
+
+**Verified 2026-10-26**, not assumed. Across two restarts the consumer resumed
+at the exact next offset — last printed 18592, nothing printed when caught up,
+first printed 18593 after new events arrived — and the events read back matched
+the producer's `seq` values and text in order, including a `delete` with no
+`record` and no `cid`.
+
+**Revisit when** slice 6 lands. The commit strategy is the one that becomes
+consequential, and it should be decided there rather than inherited from the
+rdkafka example.
