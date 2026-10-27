@@ -45,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
         multiplier: config.backoff_multiplier.get(),
     };
     let mut consecutive_failures: u32 = 0;
+    let mut connections: u32 = 0;
     let url = config.jetstream_url();
 
     let rotation_format = rotation_format(&config.rotation);
@@ -67,6 +68,8 @@ async fn main() -> anyhow::Result<()> {
         let connection_result = connect(&url).await;
         let mut stream = match connection_result {
             Ok(s) => {
+                connections += 1;
+                info!("connected to Jetstream (connection {connections})");
                 consecutive_failures = 0;
                 s
             }
