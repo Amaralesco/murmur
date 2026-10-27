@@ -40,10 +40,11 @@ async fn main() -> anyhow::Result<()> {
     let event_producer = EventProducer::new(&config.kafka_brokers, &config.kafka_events_topic)?;
 
     let backoff = BackoffConfig {
-        base_delay_secs: config.base_delay_secs,
-        max_delay_secs: config.max_delay_secs,
+        base_delay_secs: config.base_delay_secs.get(),
+        max_delay_secs: config.max_delay_secs.get(),
         multiplier: config.backoff_multiplier.get(),
     };
+    warn_if_backoff_not_growing(&backoff);
     let mut consecutive_failures: u32 = 0;
     let mut connections: u32 = 0;
     let url = config.jetstream_url();
@@ -237,6 +238,20 @@ fn verify_compression(initial_byte_count: u64, compressed_file_path: &Path) -> a
     debug!("Verification completed. # bytes Before {initial_byte_count}, got {bytes_uncompressed}");
 
     Ok(())
+}
+
+fn warn_if_backoff_not_growing(backoff: &BackoffConfig) {
+    if backoff.multiplier == 1 {
+        warn!(
+            "BACKOFF_MULTIPLIER is 1, so the retry delay never grows: every attempt waits {}s and MAX_DELAY_SECS={} is unreachable",
+            backoff.base_delay_secs, backoff.max_delay_secs
+        );
+    } else if backoff.base_delay_secs >= backoff.max_delay_secs {
+        warn!(
+            "BASE_DELAY_SECS={} is at or above MAX_DELAY_SECS={}, so the first retry is already capped and the delay never grows",
+            backoff.base_delay_secs, backoff.max_delay_secs
+        );
+    }
 }
 
 fn backoff_delay(config: &BackoffConfig, attempts: u32) -> Duration {

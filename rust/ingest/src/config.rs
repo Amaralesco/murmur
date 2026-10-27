@@ -39,10 +39,10 @@ pub struct Config {
     pub kafka_brokers: String,
 
     #[envconfig(default = "1")]
-    pub base_delay_secs: u64,
+    pub base_delay_secs: NonZeroU64,
 
     #[envconfig(default = "300")]
-    pub max_delay_secs: u64,
+    pub max_delay_secs: NonZeroU64,
 
     #[envconfig(default = "2")]
     pub backoff_multiplier: NonZeroU64,
@@ -74,5 +74,36 @@ impl Config {
             "wss://jetstream.{}.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents?kinds=commit&collections={}",
             self.zone, self.jetstream_collections
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn required_only() -> HashMap<String, String> {
+        let mut vars = HashMap::new();
+        vars.insert("ZONE".to_string(), "us-east".to_string());
+        vars.insert(
+            "JETSTREAM_COLLECTIONS".to_string(),
+            "app.bsky.feed.post".to_string(),
+        );
+        vars.insert("KAFKA_BROKERS".to_string(), "localhost:9092".to_string());
+        vars.insert(
+            "KAFKA_EVENTS_TOPIC".to_string(),
+            "murmur.events".to_string(),
+        );
+        vars
+    }
+
+    #[test]
+    fn shipped_defaults_are_valid() {
+        let result = Config::init_from_hashmap(&required_only());
+
+        match result {
+            Ok(_) => (),
+            Err(e) => panic!("a default in Config does not parse: {e}"),
+        }
     }
 }
