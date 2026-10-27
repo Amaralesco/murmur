@@ -6,7 +6,7 @@
 |---|---|
 | 1 — full path in `Archive` | done |
 | 2 — compress one file (compress, sync, verify, rename, delete) | done, verified with the zstd CLI |
-| 3 — the sweep | **cut** — retroactive compression not wanted |
+| 3 — the sweep | **cut** — retroactive compression not wanted. **Reopened 2026-10-27**: the cut did not hold, see `docs/tasks/medium/orphaned-archives.md` |
 | 4 — wire into rotation, in the background | wiring done; `spawn_blocking` deferred behind a measured trigger, see `DECISIONS.md` 2026-09-17 |
 | 5 — step through it in a debugger | done |
 
