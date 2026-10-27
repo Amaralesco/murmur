@@ -9,6 +9,7 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Error;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
+use anyhow::Context;
 use futures_util::StreamExt;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{debug, error, info, trace, warn};
@@ -50,8 +51,12 @@ async fn main() -> anyhow::Result<()> {
 
     // ########## File section ##########
     std::fs::create_dir_all(&config.readings_dir)?;
-    let mut archive =
-        create_file(&config.readings_dir, rotation_format).expect("could not create archive file");
+    let mut archive = create_file(&config.readings_dir, rotation_format).with_context(|| {
+        format!(
+            "could not create the first archive file in {}",
+            config.readings_dir.display()
+        )
+    })?;
 
     // ########## Connection Loop ##########
     loop {

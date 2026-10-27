@@ -1,13 +1,14 @@
 mod config;
 use crate::config::Config;
 
+use anyhow::Context;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{CommitMode, Consumer};
 use rdkafka::message::Message;
 use tracing::{debug, trace, warn};
 
-async fn consume_and_print(config: &Config) {
+async fn consume_and_print(config: &Config) -> anyhow::Result<()> {
     let mut consumer_config = ClientConfig::new();
 
     consumer_config
@@ -19,12 +20,15 @@ async fn consume_and_print(config: &Config) {
         .set("auto.offset.reset", "earliest")
         .set_log_level(RDKafkaLogLevel::Debug);
 
-    let consumer: StreamConsumer = consumer_config
-        .create()
-        .expect("could not create the Kafka consumer");
+    let consumer: StreamConsumer = consumer_config.create().with_context(|| {
+        format!(
+            "could not create a Kafka consumer for {}",
+            config.kafka_brokers
+        )
+    })?;
     consumer
         .subscribe(&[config.kafka_events_topic.as_str()])
-        .expect("Can't subscribe to specified topics");
+        .with_context(|| format!("could not subscribe to {}", config.kafka_events_topic))?;
 
     loop {
         match consumer.recv().await {
@@ -47,8 +51,9 @@ async fn consume_and_print(config: &Config) {
                     m.timestamp()
                 );
                 trace!("{payload}");
-                // TODO(exits): a failed commit kills a consumer that is working.
-                consumer.commit_message(&m, CommitMode::Async).unwrap();
+                if let Err(e) = consumer.commit_message(&m, CommitMode::Async) {
+                    warn!("could not commit offset {}: {e}", m.offset());
+                }
             }
         };
     }
@@ -58,6 +63,5 @@ async fn consume_and_print(config: &Config) {
 async fn main() -> anyhow::Result<()> {
     let config: Config = murmur_common::telemetry::bootstrap()?;
 
-    consume_and_print(&config).await;
-    Ok(())
+    consume_and_print(&config).await
 }
